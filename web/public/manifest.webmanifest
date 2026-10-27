@@ -1,0 +1,11 @@
+{
+  "name": "Galileo Live",
+  "short_name": "Galileo",
+  "description": "Live physics lab assistant, by voice.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1f4e99",
+  "lang": "en",
+  "icons": []
+}

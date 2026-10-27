@@ -1,0 +1,32 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Runtime data (lives in /data/galileo-live on the VPS)
+data/
+uploads/
+reports/
+plots/
+*.db
+*.mp4
+*.pdf
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/

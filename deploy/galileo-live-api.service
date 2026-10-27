@@ -1,0 +1,15 @@
+[Unit]
+Description=Galileo Live API (FastAPI)
+After=network-online.target
+
+[Service]
+WorkingDirectory=/data/galileo-live
+EnvironmentFile=/data/galileo-live/.env
+Environment=PATH=/data/galileo-live/bin:/usr/local/bin:/usr/bin:/bin
+Environment=GALILEO_DATA_DIR=/data/galileo-live/data
+ExecStart=/data/galileo-live/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8443
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

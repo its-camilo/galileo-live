@@ -1,0 +1,60 @@
+\documentclass[11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage[<< lang_babel >>]{babel}
+
+\title{<< title | tex >>}
+\author{<< author | tex >>}
+\date{<< date | tex >>}
+
+\begin{document}
+\maketitle
+
+\section*{<< labels.objective | tex >>}
+<< objective | tex >>
+
+\section*{<< labels.hypothesis | tex >>}
+<< hypothesis | tex >>
+
+\section*{<< labels.materials | tex >>}
+\begin{itemize}
+<% for item in materials %>\item << item | tex >>
+<% endfor %>\end{itemize}
+
+\section*{<< labels.procedure | tex >>}
+\begin{enumerate}
+<% for step in procedure %>\item << step | tex >>
+<% endfor %>\end{enumerate}
+
+\section*{<< labels.data | tex >>}
+\begin{tabular}{lrrrr}
+\toprule
+<< labels.quantity | tex >> & << labels.value | tex >> & << labels.reference | tex >> & << labels.error | tex >> & $R^2$ \\
+\midrule
+<< key_label | tex >> & << "%.3f" | format(key_value) >> & << ref_text | tex >> & << error_text | tex >> & << "%.4f" | format(r2) >> \\
+\bottomrule
+\end{tabular}
+
+\section*{<< labels.analysis | tex >>}
+<< analysis | tex >>
+
+\begin{equation*}
+<< equation >>
+\end{equation*}
+
+\section*{<< labels.figures | tex >>}
+<% for fig in figures %>\begin{figure}[h]
+\centering
+\includegraphics[width=0.75\linewidth]{<< fig.path >>}
+\caption{<< fig.caption | tex >>}
+\end{figure}
+<% endfor %>
+
+\section*{<< labels.conclusion | tex >>}
+<< conclusion | tex >>
+
+\end{document}
