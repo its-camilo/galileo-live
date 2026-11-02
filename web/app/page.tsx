@@ -40,6 +40,9 @@ export default async function Home() {
           </form>
         </>
       )}
+      <p style={{ fontSize: 14, marginTop: 32 }}>
+        <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
+      </p>
     </main>
   );
 }
