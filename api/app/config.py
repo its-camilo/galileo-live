@@ -16,6 +16,7 @@ class Settings:
     jwt_issuer: str
     meta_api_key: str | None
     meta_base_url: str
+    meta_chat_model: str
     blob_token: str | None
     allowed_origins: tuple[str, ...] = field(default_factory=tuple)
     allowed_hosts: tuple[str, ...] = field(default_factory=tuple)
@@ -46,6 +47,7 @@ def get_settings() -> Settings:
         jwt_issuer=os.environ.get("APP_JWT_ISSUER", "galileo-web"),
         meta_api_key=os.environ.get("MODEL_API_KEY") or None,
         meta_base_url=os.environ.get("META_API_BASE_URL", "https://api.meta.ai/v1"),
+        meta_chat_model=os.environ.get("META_CHAT_MODEL", "muse-spark-1.3"),
         blob_token=os.environ.get("BLOB_READ_WRITE_TOKEN") or None,
         allowed_origins=_csv("ALLOWED_ORIGINS", "https://galileo-live.vercel.app,http://localhost:3000"),
         allowed_hosts=_csv("ALLOWED_HOSTS", "vps-oracle-01.tailfb0395.ts.net,127.0.0.1,localhost"),

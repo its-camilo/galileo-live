@@ -6,7 +6,7 @@ import httpx
 
 from .config import Settings
 
-CHAT_MODEL = "muse-spark-1.3-contributor"
+DEFAULT_CHAT_MODEL = "muse-spark-1.3"
 SAM_MODEL = "sam-3.1"
 IMAGE_MODEL = "muse-image-1.0"
 
@@ -47,10 +47,11 @@ class MetaClient:
         if not settings.meta_api_key:
             raise MetaNotConfigured("MODEL_API_KEY not configured")
         self._base = settings.meta_base_url.rstrip("/")
+        self._model = settings.meta_chat_model or DEFAULT_CHAT_MODEL
         self._auth = {"Authorization": f"Bearer {settings.meta_api_key}"}
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None, reasoning_effort: str = "low") -> dict:
-        body: dict = {"model": CHAT_MODEL, "messages": messages, "reasoning_effort": reasoning_effort}
+        body: dict = {"model": self._model, "messages": messages, "reasoning_effort": reasoning_effort}
         if tools:
             body["tools"] = tools
         r = httpx.post(f"{self._base}/chat/completions", json=body, headers=self._auth, timeout=60)

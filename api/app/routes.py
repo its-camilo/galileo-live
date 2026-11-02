@@ -8,7 +8,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from . import blob, catalog, measure, media, reports
-from .auth import require_user
+from .auth import CONSENT_VERSION, require_consent, require_user
 from .config import get_settings
 from .db import connect
 from .meta import MetaClient, MetaNotConfigured, parse_frames, track_centroids
@@ -69,7 +69,7 @@ class SessionIn(BaseModel):
 
 
 @router.post("/sessions", dependencies=[Depends(rate_limit("sessions"))])
-def create_session(body: SessionIn, user: dict = Depends(require_user)):
+def create_session(body: SessionIn, user: dict = Depends(require_consent)):
     if body.experiment and body.experiment not in catalog.EXPERIMENTS:
         raise HTTPException(400, "unknown experiment")
     session_id = uuid.uuid4().hex
@@ -86,7 +86,7 @@ def create_session(body: SessionIn, user: dict = Depends(require_user)):
 async def stt(
     audio: UploadFile = File(...),
     lang_hint: str = Form("en", pattern="^(en|es)$"),
-    user: dict = Depends(require_user),
+    user: dict = Depends(require_consent),
 ):
     spend(user["sub"], "stt")
     data = await audio.read(10 * 1024 * 1024 + 1)
@@ -102,7 +102,7 @@ class LiveIn(BaseModel):
 
 
 @router.post("/live", dependencies=[Depends(rate_limit("live"))])
-def live(body: LiveIn, user: dict = Depends(require_user)):
+def live(body: LiveIn, user: dict = Depends(require_consent)):
     spend(user["sub"], "live")
     with connect() as conn:
         sess = _session(conn, body.session_id, user["sub"])
@@ -138,7 +138,7 @@ class CalibrateIn(BaseModel):
 
 
 @router.post("/calibrate", dependencies=[Depends(rate_limit("calibrate"))])
-def calibrate(body: CalibrateIn, user: dict = Depends(require_user)):
+def calibrate(body: CalibrateIn, user: dict = Depends(require_consent)):
     with connect() as conn:
         sess = _session(conn, body.session_id, user["sub"])
         try:
@@ -157,7 +157,7 @@ async def measure_clip(
     session_id: str = Form(..., max_length=64),
     video: UploadFile = File(...),
     theta_deg: float | None = Form(None, ge=0, le=90),
-    user: dict = Depends(require_user),
+    user: dict = Depends(require_consent),
 ):
     settings = get_settings()
     with connect() as conn:
@@ -221,7 +221,7 @@ class AgentIn(BaseModel):
 
 
 @router.post("/agent", dependencies=[Depends(rate_limit("agent"))])
-def agent(body: AgentIn, user: dict = Depends(require_user)):
+def agent(body: AgentIn, user: dict = Depends(require_consent)):
     spend(user["sub"], "agent")
     with connect() as conn:
         sess = _session(conn, body.session_id, user["sub"])
@@ -261,7 +261,7 @@ class ReportIn(BaseModel):
 
 
 @router.post("/report", dependencies=[Depends(rate_limit("report"))])
-def report(body: ReportIn, user: dict = Depends(require_user)):
+def report(body: ReportIn, user: dict = Depends(require_consent)):
     settings = get_settings()
     with connect() as conn:
         sess = _session(conn, body.session_id, user["sub"])
@@ -335,7 +335,7 @@ def report(body: ReportIn, user: dict = Depends(require_user)):
 
 
 @router.get("/reports/{report_id}/pdf", dependencies=[Depends(rate_limit("history"))])
-def report_pdf(report_id: str, user: dict = Depends(require_user)):
+def report_pdf(report_id: str, user: dict = Depends(require_consent)):
     if not re.fullmatch(r"[0-9a-f]{32}", report_id):
         raise HTTPException(404, "report not found")
     with connect() as conn:
@@ -357,7 +357,7 @@ def report_pdf(report_id: str, user: dict = Depends(require_user)):
 
 
 @router.get("/history", dependencies=[Depends(rate_limit("history"))])
-def history(user: dict = Depends(require_user)):
+def history(user: dict = Depends(require_consent)):
     with connect() as conn:
         rows = conn.execute(
             """
@@ -372,3 +372,70 @@ def history(user: dict = Depends(require_user)):
             (user["sub"],),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+class ConsentIn(BaseModel):
+    version: str
+    age_confirmed: bool
+    data_processing: bool
+    meta_processing: bool
+    international_transfer: bool
+
+
+@router.get("/me")
+def me(user: dict = Depends(require_user)):
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT email, name, consent_version, consent_at FROM users WHERE id = ?", (user["sub"],)
+        ).fetchone()
+    return {
+        "email": row["email"],
+        "name": row["name"],
+        "consent_required_version": CONSENT_VERSION,
+        "consented": row["consent_version"] == CONSENT_VERSION,
+        "consent_at": row["consent_at"],
+    }
+
+
+@router.post("/consent", dependencies=[Depends(rate_limit("sessions"))])
+def consent(body: ConsentIn, user: dict = Depends(require_user)):
+    if body.version != CONSENT_VERSION:
+        raise HTTPException(409, "consent version changed, reload the page")
+    if not all([body.age_confirmed, body.data_processing, body.meta_processing, body.international_transfer]):
+        raise HTTPException(422, "all consent checkboxes are required")
+    scope = json.dumps({
+        "age_confirmed": True,
+        "data_processing": True,
+        "meta_processing": True,
+        "international_transfer": True,
+    })
+    with connect() as conn:
+        conn.execute(
+            "UPDATE users SET consent_version = ?, consent_at = datetime('now'), consent_scope = ? WHERE id = ?",
+            (CONSENT_VERSION, scope, user["sub"]),
+        )
+    return {"consented": True, "consent_version": CONSENT_VERSION}
+
+
+@router.get("/sessions/{session_id}", dependencies=[Depends(rate_limit("history"))])
+def get_session(session_id: str, user: dict = Depends(require_consent)):
+    with connect() as conn:
+        sess = _session(conn, session_id, user["sub"])
+        res = conn.execute("SELECT * FROM results WHERE session_id = ?", (sess["id"],)).fetchone()
+    result = None
+    if res is not None:
+        result = {
+            "key_name": res["key_name"],
+            "key_value": res["key_value"],
+            "ref_value": res["ref_value"],
+            "error_pct": res["error_pct"],
+            "r2": res["r2"],
+        }
+    return {
+        "id": sess["id"],
+        "state": sess["state"],
+        "experiment": sess["experiment"],
+        "lang": sess["lang"],
+        "px_per_m": sess["px_per_m"],
+        "result": result,
+    }

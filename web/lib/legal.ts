@@ -1,9 +1,9 @@
-// Datos de contacto y fechas usados en /privacy y /terms.
-// Revisar antes de publicar la pantalla de consentimiento de Google.
+// Datos de contacto y versión del consentimiento. La versión debe coincidir con CONSENT_VERSION en la API.
 export const LEGAL = {
   appName: "Galileo Live",
   owner: "Camilo Alejandro Lagos Malaver",
+  country: "Colombia",
   contactEmail: "camiloalejandrolagosmalaver@gmail.com",
+  consentVersion: "2026-11-01",
   updated: "1 de noviembre de 2026",
-  effective: "1 de noviembre de 2026",
 };

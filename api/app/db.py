@@ -60,3 +60,7 @@ def connect():
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+        for name in ("consent_version", "consent_at", "consent_scope"):
+            if name not in cols:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {name} TEXT")

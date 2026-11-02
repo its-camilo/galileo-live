@@ -1,10 +1,11 @@
 import jwt
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 
 from .config import get_settings
 from .db import connect
 
 MAX_TOKEN_LIFETIME = 600
+CONSENT_VERSION = "2026-11-01"
 
 
 def require_user(authorization: str | None = Header(default=None)) -> dict:
@@ -31,4 +32,12 @@ def require_user(authorization: str | None = Header(default=None)) -> dict:
             "INSERT OR IGNORE INTO users (id, email, name) VALUES (?, ?, ?)",
             (claims["sub"], claims["sub"], claims.get("name")),
         )
+    return claims
+
+
+def require_consent(claims: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        row = conn.execute("SELECT consent_version FROM users WHERE id = ?", (claims["sub"],)).fetchone()
+    if row is None or row["consent_version"] != CONSENT_VERSION:
+        raise HTTPException(403, "consent required")
     return claims

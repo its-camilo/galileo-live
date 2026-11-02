@@ -1,86 +1,70 @@
 import { LegalLayout } from "@/components/legal-layout";
 import { LEGAL } from "@/lib/legal";
 
-export const metadata = { title: "Terms of Service · Galileo Live" };
+export const metadata = { title: "Términos de servicio · Galileo Live" };
 
 export default function TermsPage() {
   return (
-    <LegalLayout title="Terms of Service / Términos de servicio">
-      <p>Last updated / Última actualización: {LEGAL.updated}</p>
+    <LegalLayout title="Términos de servicio">
+      <p>Última actualización: {LEGAL.updated}.</p>
 
-      <h2>English</h2>
-      <ol>
-        <li>
-          <strong>The service.</strong> {LEGAL.appName} is an educational tool to guide and analyze physics experiments.
-          It is provided by {LEGAL.owner} free of charge, as is, without warranties of any kind.
-        </li>
-        <li>
-          <strong>Accuracy.</strong> Results and suggestions are estimates for learning. Do not use them for decisions
-          that affect safety, health, or grades without checking them yourself.
-        </li>
-        <li>
-          <strong>Account.</strong> You sign in with Google. You are responsible for activity under your account.
-        </li>
-        <li>
-          <strong>Acceptable use.</strong> Do not record people without their consent, do not record private or
-          dangerous places, do not attempt to access other users' data, and do not abuse or overload the service.
-        </li>
-        <li>
-          <strong>Third-party services.</strong> The app uses Google sign-in, Meta Model API and Vercel. Their terms
-          also apply. Under Meta's Contributor mode, your inputs and outputs may be used to train Meta's models, as
-          explained in the Privacy Policy.
-        </li>
-        <li>
-          <strong>Availability.</strong> The service may be interrupted, changed, or discontinued at any time.
-        </li>
-        <li>
-          <strong>Limitation of liability.</strong> To the extent allowed by law, the author is not liable for indirect
-          or consequential damages arising from the use of the service.
-        </li>
-        <li>
-          <strong>Changes.</strong> We may update these terms. Continued use means acceptance of the new terms.
-        </li>
-        <li>
-          <strong>Contact.</strong> <a href={`mailto:${LEGAL.contactEmail}`}>{LEGAL.contactEmail}</a>
-        </li>
-      </ol>
+      <h2>1. El servicio</h2>
+      <p>
+        {LEGAL.appName} es una herramienta educativa para guiar y analizar experimentos de física. {LEGAL.owner} la
+        ofrece gratuitamente y sin garantías, sin perjuicio de los derechos que la Ley 1480 de 2011 (Estatuto del
+        Consumidor) reconoce a los usuarios.
+      </p>
 
-      <h2>Español</h2>
-      <ol>
-        <li>
-          <strong>El servicio.</strong> {LEGAL.appName} es una herramienta educativa para guiar y analizar experimentos
-          de física. {LEGAL.owner} la ofrece gratis, tal cual, sin garantías de ningún tipo.
-        </li>
-        <li>
-          <strong>Precisión.</strong> Los resultados y sugerencias son estimaciones para aprender. No los uses para
-          decisiones que afecten la seguridad, la salud o las calificaciones sin verificarlos tú mismo.
-        </li>
-        <li>
-          <strong>Cuenta.</strong> Inicias sesión con Google. Eres responsable de la actividad de tu cuenta.
-        </li>
-        <li>
-          <strong>Uso aceptable.</strong> No grabes personas sin su consentimiento, no grabes lugares privados o
-          peligrosos, no intentes acceder a datos de otros usuarios y no abuses ni sobrecargues el servicio.
-        </li>
-        <li>
-          <strong>Servicios de terceros.</strong> La aplicación usa inicio de sesión de Google, Meta Model API y Vercel.
-          Sus términos también aplican. En el modo Contributor de Meta, tus entradas y salidas pueden usarse para
-          entrenar los modelos de Meta, como explica la Política de privacidad.
-        </li>
-        <li>
-          <strong>Disponibilidad.</strong> El servicio puede interrumpirse, cambiar o descontinuarse en cualquier momento.
-        </li>
-        <li>
-          <strong>Limitación de responsabilidad.</strong> En la medida permitida por la ley, el autor no responde por
-          daños indirectos o consecuenciales derivados del uso del servicio.
-        </li>
-        <li>
-          <strong>Cambios.</strong> Podemos actualizar estos términos. Seguir usando el servicio implica aceptarlos.
-        </li>
-        <li>
-          <strong>Contacto.</strong> <a href={`mailto:${LEGAL.contactEmail}`}>{LEGAL.contactEmail}</a>
-        </li>
-      </ol>
+      <h2>2. Precisión de los resultados</h2>
+      <p>
+        Los resultados y sugerencias son estimaciones con fines de aprendizaje. No los uses para decisiones que afecten la
+        seguridad, la salud o las calificaciones sin verificarlos por tu cuenta.
+      </p>
+
+      <h2>3. Cuenta y requisitos</h2>
+      <p>
+        Inicias sesión con tu cuenta de Google. Debes ser mayor de 18 años o tener autorización de tu representante legal,
+        y aceptar la política de privacidad. Eres responsable de la actividad realizada desde tu cuenta.
+      </p>
+
+      <h2>4. Uso aceptable</h2>
+      <ul>
+        <li>No grabes personas sin su consentimiento ni lugares privados o peligrosos.</li>
+        <li>No envíes información personal sensible, confidencial ni de terceros que no sea necesaria para el experimento.</li>
+        <li>No intentes acceder a datos de otros usuarios, ni abuses, automatices o sobrecargues el servicio.</li>
+      </ul>
+
+      <h2>5. Servicios de terceros</h2>
+      <p>
+        La app usa Google, Meta Model API, Vercel y Tailscale, y sus términos también aplican. Meta procesa el contenido
+        enviado en el nivel Standard, según sus Términos de servicio de Meta Model API.
+      </p>
+
+      <h2>6. Disponibilidad</h2>
+      <p>El servicio puede interrumpirse, cambiar o terminarse. Procuraremos avisar con anticipación cuando sea posible.</p>
+
+      <h2>7. Responsabilidad</h2>
+      <p>
+        En la medida que la ley permita, el responsable no responde por daños indirectos o consecuenciales derivados del
+        uso del servicio, sin afectar las garantías legales del consumidor.
+      </p>
+
+      <h2>8. Ley aplicable y jurisdicción</h2>
+      <p>
+        Estos términos se rigen por las leyes de la República de Colombia. Cualquier controversia se someterá a los jueces
+        de Bogotá D.C., sin perjuicio de las competencias de la Superintendencia de Industria y Comercio.
+      </p>
+
+      <h2>9. Cambios</h2>
+      <p>
+        Podemos actualizar estos términos. Si el cambio es relevante, te pediremos aceptarlo de nuevo antes de seguir
+        usando el servicio.
+      </p>
+
+      <h2>10. Contacto</h2>
+      <p>
+        <a href={`mailto:${LEGAL.contactEmail}`}>{LEGAL.contactEmail}</a>
+      </p>
     </LegalLayout>
   );
 }

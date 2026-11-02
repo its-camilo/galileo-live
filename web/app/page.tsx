@@ -1,48 +1,68 @@
+import { auth, signIn } from "@/auth";
 import { headers } from "next/headers";
-import { auth, signIn, signOut } from "@/auth";
-import { dictionaries, pickLang } from "@/lib/i18n";
+import { Nav } from "@/components/nav";
+import { Trajectory } from "@/components/trajectory";
+import { pickLang, t } from "@/lib/i18n";
+import { experimentUi } from "@/lib/catalog-ui";
+import Link from "next/link";
 
 export default async function Home() {
   const lang = pickLang((await headers()).get("accept-language"));
-  const t = dictionaries[lang];
+  const T = t(lang);
   const session = await auth();
+  const mrua = experimentUi("mrua_ramp", lang);
+  const fall = experimentUi("free_fall", lang);
 
   return (
-    <main style={{ maxWidth: 480, margin: "0 auto", padding: 24 }}>
-      <h1>{t.title}</h1>
-      <p>{t.subtitle}</p>
+    <>
+      <Nav lang={lang} />
+      <main className="home">
+        <section className="hero">
+          <div className="hero-copy">
+            <h1>{T.heroTitle}</h1>
+            <p className="lede">{T.heroLede}</p>
+            {session?.user ? (
+              <Link className="btn btn-signal" href="/start">
+                {T.startCta}
+              </Link>
+            ) : (
+              <form
+                action={async () => {
+                  "use server";
+                  await signIn("google");
+                }}
+              >
+                <button type="submit" className="btn btn-signal">
+                  {T.signIn}
+                </button>
+              </form>
+            )}
+            <p className="fine">{T.heroFine}</p>
+          </div>
+          <Trajectory T={T} />
+        </section>
 
-      {session?.user ? (
-        <>
-          <button type="button">{t.start}</button>
-          <p>
-            <a href="/history">{t.history}</a>
-          </p>
-          <form
-            action={async () => {
-              "use server";
-              await signOut();
-            }}
-          >
-            <button type="submit">{t.signOut}</button>
-          </form>
-        </>
-      ) : (
-        <>
-          <p>{t.needLogin}</p>
-          <form
-            action={async () => {
-              "use server";
-              await signIn("google");
-            }}
-          >
-            <button type="submit">{t.signIn}</button>
-          </form>
-        </>
-      )}
-      <p style={{ fontSize: 14, marginTop: 32 }}>
-        <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
-      </p>
-    </main>
+        <section className="catalog" aria-labelledby="catalog-title">
+          <h2 id="catalog-title">{T.catalogTitle}</h2>
+          <div className="catalog-grid">
+            <article className="catalog-item">
+              <h3>{T.cardMruaTitle}</h3>
+              <p>{T.cardMruaBody}</p>
+              <span className="fine">{mrua.title}</span>
+            </article>
+            <article className="catalog-item">
+              <h3>{T.cardFallTitle}</h3>
+              <p>{T.cardFallBody}</p>
+              <span className="fine">{fall.title}</span>
+            </article>
+          </div>
+        </section>
+
+        <footer className="site-foot">
+          <Link href="/privacy">{T.privacy}</Link>
+          <Link href="/terms">{T.terms}</Link>
+        </footer>
+      </main>
+    </>
   );
 }

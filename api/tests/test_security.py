@@ -35,26 +35,46 @@ def auth(tok: str) -> dict:
     return {"Authorization": f"Bearer {tok}"}
 
 
+CONSENT = {"version": "2026-11-01", "age_confirmed": True, "data_processing": True,
+           "meta_processing": True, "international_transfer": True}
+
+
+def accept(client, tok: str) -> None:
+    assert client.post("/consent", json=CONSENT, headers=auth(tok)).status_code == 200
+
+
 def test_valid_token_accepted(client):
+    r = client.get("/me", headers=auth(token()))
+    assert r.status_code == 200 and r.json()["consented"] is False
+
+
+def test_data_endpoints_require_consent(client):
+    assert client.get("/history", headers=auth(token())).status_code == 403
+    accept(client, token())
     assert client.get("/history", headers=auth(token())).status_code == 200
 
 
+def test_consent_requires_every_box(client):
+    bad = dict(CONSENT, meta_processing=False)
+    assert client.post("/consent", json=bad, headers=auth(token())).status_code == 422
+
+
 def test_wrong_issuer_rejected(client):
-    assert client.get("/history", headers=auth(token(iss="attacker"))).status_code == 401
+    assert client.get("/me", headers=auth(token(iss="attacker"))).status_code == 401
 
 
 def test_wrong_audience_rejected(client):
-    assert client.get("/history", headers=auth(token(aud="other"))).status_code == 401
+    assert client.get("/me", headers=auth(token(aud="other"))).status_code == 401
 
 
 def test_long_lived_token_rejected(client):
     now = int(time.time())
-    assert client.get("/history", headers=auth(token(iat=now, exp=now + 3600))).status_code == 401
+    assert client.get("/me", headers=auth(token(iat=now, exp=now + 3600))).status_code == 401
 
 
 def test_expired_token_rejected(client):
     now = int(time.time())
-    assert client.get("/history", headers=auth(token(iat=now - 900, exp=now - 600))).status_code == 401
+    assert client.get("/me", headers=auth(token(iat=now - 900, exp=now - 600))).status_code == 401
 
 
 def test_missing_token_rejected(client):
@@ -90,16 +110,17 @@ def test_cors_only_allows_app_origin(client):
 
 
 def test_per_ip_rate_limit_on_sessions(client):
-    statuses = [client.post("/sessions", json={"lang": "en"}, headers=auth(token())).status_code for _ in range(22)]
-    assert statuses[:20] == [200] * 20
-    assert statuses[20] == 429
+    accept(client, token())
+    statuses = [client.post("/sessions", json={"lang": "en"}, headers=auth(token())).status_code for _ in range(21)]
+    assert statuses[:19] == [200] * 19  # the consent call above used one of the 20 slots
+    assert statuses[19] == 429
 
 
 def test_daily_quota_blocks_measure(client, monkeypatch):
     from app import security
     monkeypatch.setitem(security.DAILY_QUOTA, "report", 0)
     from app.db import connect
-    assert client.get("/history", headers=auth(token())).status_code == 200
+    accept(client, token())
     with connect() as conn:
         conn.execute("INSERT INTO sessions (id, user_id, experiment, lang, state, px_per_m) VALUES ('s1', 'ana@example.com', 'mrua_ramp', 'en', 'results', 100)")
         conn.execute("INSERT INTO results (session_id, key_name, key_value, ref_value, error_pct, r2) VALUES ('s1', 'a', 0.4, NULL, NULL, 0.99)")
