@@ -1,3 +1,4 @@
+import base64
 import json
 import re
 from pathlib import Path
@@ -160,6 +161,16 @@ class MetaClient:
                 elif event.get("type") == "response.completed":
                     break
         return [tuple(float(g) for g in b.groups()) for b in BOX_RE.finditer("".join(parts))]
+
+    def generate_image_png(self, prompt: str, size: str = "1536x1024") -> bytes:
+        r = httpx.post(
+            f"{self._base}/images/generations",
+            json={"model": IMAGE_MODEL, "prompt": prompt, "size": size, "output_format": "png", "n": 1},
+            headers=self._auth,
+            timeout=120,
+        )
+        r.raise_for_status()
+        return base64.b64decode(r.json()["data"][0]["b64_json"])
 
     def generate_image(self, prompt: str) -> dict:
         r = httpx.post(

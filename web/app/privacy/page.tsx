@@ -67,7 +67,7 @@ export default function PrivacyPage() {
       <ul>
         <li>
           <strong>Meta Platforms (Meta Model API):</strong> procesa los fotogramas, el audio y el texto para generar las
-          respuestas del asistente, el reconocimiento de voz y la detección del objeto en cada imagen. Usamos el nivel
+          respuestas del asistente, el reconocimiento de voz, la detección del objeto en cada imagen y la generación del diagrama del montaje. Para el diagrama solo se envía el tipo de experimento del catálogo, nunca tu descripción ni tus datos. Usamos el nivel
           Standard del servicio. La única excepción es el texto del informe descrito en el punto 6 bis, y solo si lo autorizas. Según sus términos, en este nivel Meta actúa como procesador y no usa ese contenido para
           entrenar sus modelos. Meta puede usar datos técnicos de uso (metadatos de las peticiones, tiempos, errores y
           conteo de tokens) para mejorar sus servicios, y puede conservar el contenido el tiempo que necesite para

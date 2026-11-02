@@ -178,3 +178,31 @@ def test_contributor_failure_returns_none(db, monkeypatch):
 
     monkeypatch.setattr(routes, "_meta", lambda: Broken())
     assert routes._contributor_text({"kind": "free"}, "en") is None
+
+
+def test_diagram_prompt_uses_only_catalog_kind(db, monkeypatch, tmp_path):
+    from app import routes
+    from app.db import connect
+
+    with connect() as c:
+        c.execute("UPDATE sessions SET description = 'Juan Pérez, juan@correo.com', object_prompt = 'my nephew' WHERE id = 's'")
+        sess = c.execute("SELECT * FROM sessions WHERE id = 's'").fetchone()
+    prompt = routes._diagram_prompt(sess)
+    assert "Juan" not in prompt and "correo" not in prompt and "nephew" not in prompt
+    assert "ramp" in prompt
+
+    class FakeImage:
+        def generate_image_png(self, p, size="1536x1024"):
+            assert p == prompt
+            return b"\x89PNG-fake"
+
+    monkeypatch.setattr(routes, "_meta", lambda: FakeImage())
+    path = routes._diagram(sess, tmp_path)
+    assert path is not None and path.read_bytes() == b"\x89PNG-fake"
+
+    class Down:
+        def generate_image_png(self, p, size="1536x1024"):
+            raise ValueError("boom")
+
+    monkeypatch.setattr(routes, "_meta", lambda: Down())
+    assert routes._diagram(sess, tmp_path) is None

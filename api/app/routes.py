@@ -2,7 +2,9 @@ import json
 import re
 import threading
 import uuid
+from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -340,6 +342,10 @@ def report(body: ReportIn, user: dict = Depends(require_consent)):
         if ai_text:
             analysis, conclusion = ai_text["analysis"], ai_text["conclusion"]
 
+    diagram = _diagram(sess, plot_dir)
+    if diagram:
+        figures.insert(0, {"path": str(diagram), "caption": "Montaje del experimento" if es else "Experiment setup"})
+
     context = {
         "session_id": sess["id"],
         "lang_babel": "spanish" if es else "english",
@@ -557,3 +563,30 @@ def _contributor_text(facts: dict, lang: str) -> dict | None:
     if len(analysis) > 1200 or len(conclusion) > 800:
         return None
     return {"analysis": analysis, "conclusion": conclusion}
+
+
+SETUP_SCENES = {
+    "mrua_ramp": "a straight inclined ramp with a small toy cart at the top, a ruler lying along the ramp, and an angle symbol theta between the ramp and the table",
+    "free_fall": "a ball held above the floor next to a vertical ruler, with its path marked by a dashed line",
+}
+
+
+def _diagram_prompt(sess) -> str:
+    """Solo el tipo de experimento del catálogo: nunca la descripción ni el objeto escritos por el usuario."""
+    scene = SETUP_SCENES.get(sess["experiment"], "a straight track with a small object on it and a ruler lying along the track")
+    return (
+        f"Clean technical line diagram of a physics lab setup: {scene}, and a smartphone on a tripod "
+        "filming the setup from the side. White background, flat vector style, minimal, labels in English, "
+        "no people, no text other than short labels."
+    )
+
+
+def _diagram(sess, out_dir: Path) -> Path | None:
+    try:
+        png = _meta().generate_image_png(_diagram_prompt(sess))
+    except (MetaNotConfigured, HTTPException, httpx.HTTPError, KeyError, IndexError, ValueError):
+        return None
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "diagram.png"
+    path.write_bytes(png)
+    return path

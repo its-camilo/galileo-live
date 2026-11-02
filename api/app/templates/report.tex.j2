@@ -17,18 +17,20 @@
 \section*{<< labels.objective | tex >>}
 << objective | tex >>
 
-\section*{<< labels.hypothesis | tex >>}
+<% if hypothesis %>\section*{<< labels.hypothesis | tex >>}
 << hypothesis | tex >>
+<% endif %>
 
-\section*{<< labels.materials | tex >>}
+<% if materials %>\section*{<< labels.materials | tex >>}
 \begin{itemize}
 <% for item in materials %>\item << item | tex >>
 <% endfor %>\end{itemize}
-
-\section*{<< labels.procedure | tex >>}
+<% endif %>
+<% if procedure %>\section*{<< labels.procedure | tex >>}
 \begin{enumerate}
 <% for step in procedure %>\item << step | tex >>
 <% endfor %>\end{enumerate}
+<% endif %>
 
 \section*{<< labels.data | tex >>}
 \begin{tabular}{lrrrr}
