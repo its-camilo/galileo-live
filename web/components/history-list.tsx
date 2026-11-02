@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Button } from "@/components/base/buttons/button";
+import { Spinner } from "@/components/base/spinner/spinner";
 import { api, apiBlob, errorKey } from "@/lib/api";
-import { isExperimentId, experimentUi } from "@/lib/catalog-ui";
+import { experimentUi, isExperimentId } from "@/lib/catalog-ui";
 import { t, type Lang } from "@/lib/i18n";
 
 type Item = { id: string; experiment: string | null; date: string; pdf_url: string; key_value: number | null };
@@ -32,8 +34,19 @@ export function HistoryList({ lang }: { lang: Lang }) {
     }
   }
 
-  if (error) return <p className="error" role="alert">{error}</p>;
-  if (items === null) return <p className="fine">{T.historyLoading}</p>;
+  if (error)
+    return (
+      <p className="error" role="alert">
+        {error}
+      </p>
+    );
+  if (items === null)
+    return (
+      <div className="flex items-center gap-3 py-6 text-text-secondary">
+        <Spinner size="sm" aria-label={T.historyLoading} />
+        <span className="fine">{T.historyLoading}</span>
+      </div>
+    );
   if (items.length === 0) return <p className="empty">{T.historyEmpty}</p>;
 
   return (
@@ -48,12 +61,10 @@ export function HistoryList({ lang }: { lang: Lang }) {
                 {T.historyDate}: {item.date.slice(0, 10)}
               </span>
             </div>
-            <span className="readout small">
-              {item.key_value !== null ? item.key_value.toFixed(3) : "—"}
-            </span>
-            <button type="button" className="btn ghost" onClick={() => download(item)}>
+            <span className="readout small">{item.key_value !== null ? item.key_value.toFixed(3) : "—"}</span>
+            <Button type="button" variant="secondary" size="small" onClick={() => download(item)}>
               {T.historyDownload}
-            </button>
+            </Button>
           </li>
         );
       })}

@@ -1,4 +1,5 @@
 import { auth, signIn, signOut } from "@/auth";
+import { Button } from "@/components/base/buttons/button";
 import { t, type Lang } from "@/lib/i18n";
 
 export async function Nav({ lang }: { lang: Lang }) {
@@ -13,16 +14,18 @@ export async function Nav({ lang }: { lang: Lang }) {
       <nav className="nav-links" aria-label="Principal">
         {session?.user ? (
           <>
-            <a href="/history">{T.history}</a>
+            <a className="text-sm font-medium" href="/history">
+              {T.history}
+            </a>
             <form
               action={async () => {
                 "use server";
                 await signOut();
               }}
             >
-              <button type="submit" className="link-button">
+              <Button type="submit" variant="secondary" size="small">
                 {T.signOut}
-              </button>
+              </Button>
             </form>
           </>
         ) : (
@@ -32,9 +35,9 @@ export async function Nav({ lang }: { lang: Lang }) {
               await signIn("google");
             }}
           >
-            <button type="submit" className="link-button">
+            <Button type="submit" variant="secondary" size="small">
               {T.signIn}
-            </button>
+            </Button>
           </form>
         )}
       </nav>

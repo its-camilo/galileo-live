@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Instrument_Sans, Instrument_Serif, IBM_Plex_Mono } from "next/font/google";
 import { headers } from "next/headers";
 import type { ReactNode } from "react";
+import { Toaster } from "@/components/base/toast/toast";
 import { pickLang } from "@/lib/i18n";
 import "./globals.css";
 
@@ -24,8 +25,11 @@ export const viewport: Viewport = {
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const lang = pickLang((await headers()).get("accept-language"));
   return (
-    <html lang={lang} className={`${display.variable} ${body.variable} ${mono.variable}`}>
-      <body>{children}</body>
+    <html lang={lang} className={`${display.variable} ${body.variable} ${mono.variable} h-full antialiased`}>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <Toaster position="top-center" />
+      </body>
     </html>
   );
 }

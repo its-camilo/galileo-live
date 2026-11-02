@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { Button } from "@/components/base/buttons/button";
 import { api, errorKey } from "@/lib/api";
 import { t, type Lang } from "@/lib/i18n";
 import { VoiceRecorder } from "@/lib/voice";
@@ -45,27 +46,25 @@ export function HoldToTalk({
       if (res.text.trim()) onTranscript(res.text.trim());
       else onError(T.noSpeechHeard);
     } catch (e) {
-      onError(T[`err${capitalize(errorKey(e))}` as "errGeneric"] ?? T.errGeneric);
+      const key = errorKey(e);
+      onError(T[`err${key.charAt(0).toUpperCase()}${key.slice(1)}` as "errGeneric"] ?? T.errGeneric);
     } finally {
       setSending(false);
     }
   }
 
   return (
-    <button
+    <Button
       type="button"
-      className={`btn talk ${listening ? "is-live" : ""}`}
+      variant={listening ? "primary" : "secondary"}
       onPointerDown={begin}
       onPointerUp={end}
       onPointerLeave={end}
       onPointerCancel={end}
       disabled={sending}
+      className={listening ? "animate-pulse" : undefined}
     >
       {sending ? T.voiceSending : listening ? "●" : label}
-    </button>
+    </Button>
   );
-}
-
-function capitalize(s: string) {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }

@@ -3,16 +3,19 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Button } from "@/components/base/buttons/button";
+import { Checkbox } from "@/components/base/checkbox/checkbox";
 import { api, errorKey } from "@/lib/api";
 import { t, type Lang } from "@/lib/i18n";
 import { LEGAL } from "@/lib/legal";
 
 const KEYS = ["age_confirmed", "data_processing", "meta_processing", "international_transfer"] as const;
+type Key = (typeof KEYS)[number];
 
 export function ConsentForm({ lang }: { lang: Lang }) {
   const T = t(lang);
   const router = useRouter();
-  const [checked, setChecked] = useState<Record<(typeof KEYS)[number], boolean>>({
+  const [checked, setChecked] = useState<Record<Key, boolean>>({
     age_confirmed: false,
     data_processing: false,
     meta_processing: false,
@@ -21,7 +24,7 @@ export function ConsentForm({ lang }: { lang: Lang }) {
   const [training, setTraining] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const labels: Record<(typeof KEYS)[number], string> = {
+  const labels: Record<Key, string> = {
     age_confirmed: T.consentAge,
     data_processing: T.consentData,
     meta_processing: T.consentMeta,
@@ -44,39 +47,37 @@ export function ConsentForm({ lang }: { lang: Lang }) {
   }
 
   return (
-    <section className="panel consent">
+    <section className="panel">
       <h1>{T.consentTitle}</h1>
       <p className="lede">{T.consentLede}</p>
       <ul className="checks">
         {KEYS.map((k) => (
           <li key={k}>
-            <label>
-              <input
-                type="checkbox"
-                checked={checked[k]}
-                onChange={(e) => setChecked({ ...checked, [k]: e.target.checked })}
-              />
-              <span>{labels[k]}</span>
-            </label>
+            <Checkbox isSelected={checked[k]} onChange={(v) => setChecked({ ...checked, [k]: v })}>
+              {labels[k]}
+            </Checkbox>
           </li>
         ))}
       </ul>
       <ul className="checks optional">
         <li>
-          <label>
-            <input type="checkbox" checked={training} onChange={(e) => setTraining(e.target.checked)} />
-            <span>{T.consentTrainingReport}</span>
-          </label>
+          <Checkbox isSelected={training} onChange={setTraining}>
+            {T.consentTrainingReport}
+          </Checkbox>
         </li>
       </ul>
       <p className="fine">
         <Link href="/privacy">{T.consentRead}</Link>
       </p>
       <p className="fine">{T.consentRevoke}</p>
-      {error && <p className="error" role="alert">{error}</p>}
-      <button type="button" className="btn btn-signal wide" disabled={!ready || saving} onClick={accept}>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      <Button type="button" variant="primary" className="w-full" disabled={!ready || saving} onClick={accept}>
         {saving ? T.consentSaving : T.consentAccept}
-      </button>
+      </Button>
     </section>
   );
 }

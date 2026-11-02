@@ -1,0 +1,46 @@
+/* Galileo Live: tokens de marca sobre BoardUI.
+   Banco de laboratorio: papel frío, tinta casi negra, naranja de señal
+   para acciones y verde azulado para datos. Se importa después de BoardUI
+   para sobrescribir sus tokens. */
+
+@theme {
+  --color-neutral-50: #f4f7f6;
+  --color-neutral-100: #e6ecea;
+  --color-neutral-200: #d5dedb;
+  --color-neutral-300: #b4c2c0;
+  --color-neutral-400: #8a9da2;
+  --color-neutral-500: #5b7078;
+  --color-neutral-600: #46595f;
+  --color-neutral-700: #34444a;
+  --color-neutral-800: #22313a;
+  --color-neutral-900: #17262e;
+  --color-neutral-950: #0f1f26;
+
+  --color-accent-50: #fdf1ec;
+  --color-accent-100: #fbe3d8;
+  --color-accent-200: #f7c5b0;
+  --color-accent-300: #f2a07f;
+  --color-accent-400: #ea7450;
+  --color-accent-500: #d24f22;
+  --color-accent-600: #b03a17;
+  --color-accent-700: #8f2e12;
+  --color-accent-800: #6e230e;
+  --color-accent-900: #4f1a0a;
+  --color-accent-950: #2f0f05;
+
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, monospace;
+  --font-display: var(--font-display), Georgia, serif;
+}
+
+:root {
+  --color-background-full: #e6ecea;
+  --color-background-primary-default: #f4f7f6;
+  --color-background-primary-hover: #e6ecea;
+  --color-background-primary-active: #d5dedb;
+  --color-background-secondary-default: #e6ecea;
+  --color-background-secondary-hover: #d5dedb;
+  --color-border-button-default: #b4c2c0;
+  --color-border-button-hover: #8a9da2;
+  --color-border-focus-ring: #0e7c74;
+}

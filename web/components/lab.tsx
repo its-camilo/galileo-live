@@ -1,8 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { AgentThinking } from "@/components/application/agent-thinking/agent-thinking";
+import { Button, ButtonLink } from "@/components/base/buttons/button";
+import { Input } from "@/components/base/input/input";
+import { Textarea } from "@/components/base/textarea/textarea";
+import { toast } from "@/components/base/toast/toast";
 import { HoldToTalk } from "@/components/hold-to-talk";
 import { Plot } from "@/components/plot";
 import { api, apiBlob, errorKey } from "@/lib/api";
@@ -183,9 +187,16 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
       const x = r.x_m;
       setLivePts((prev) => [...prev, { t, x }]);
     }
-    if (r.event === "moving") speak(T.eventMoving, lang);
-    if (r.event === "left_frame") speak(T.eventLeft, lang);
-    if (r.event === "timeout") speak(T.eventTimeout, lang);
+    const events: Record<string, string> = {
+      moving: T.eventMoving,
+      left_frame: T.eventLeft,
+      timeout: T.eventTimeout,
+      stopped: T.eventStopped,
+    };
+    if (r.event && events[r.event]) {
+      speak(events[r.event], lang);
+      toast(events[r.event]);
+    }
     if (r.event === "too_few") {
       setError(T.errTooFew);
       setRunActive(false);
@@ -339,9 +350,9 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
   return (
     <div className="lab">
       <header className="lab-head">
-        <Link href="/start" className="link-button">
+        <ButtonLink href="/start" variant="ghost" size="small">
           {T.back}
-        </Link>
+        </ButtonLink>
         <span className="lab-title">{title}</span>
       </header>
 
@@ -362,25 +373,24 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
               </li>
             ))}
           </ol>
+          {busy && <AgentThinking label={T.chatAssistant} variant="wave" />}
           {session.experiment ? (
             <div className="ready">
               <p>{T.freeReady}</p>
               {isCustom && session.description && <p className="fine">{session.description}</p>}
-              <button type="button" className="btn btn-signal wide" onClick={() => setPhase("setup")}>
+              <Button type="button" variant="primary" className="w-full" onClick={() => setPhase("setup")}>
                 {T.continueSetup}
-              </button>
+              </Button>
             </div>
           ) : (
             <>
-              <label className="field">
-                <span className="sr-only">{T.chatPlaceholder}</span>
-                <textarea
-                  rows={2}
-                  value={draft}
-                  placeholder={T.chatPlaceholder}
-                  onChange={(e) => setDraft(e.target.value)}
-                />
-              </label>
+              <Textarea
+                aria-label={T.chatPlaceholder}
+                rows={2}
+                value={draft}
+                placeholder={T.chatPlaceholder}
+                onChange={setDraft}
+              />
               <div className="row">
                 <HoldToTalk
                   lang={lang}
@@ -388,9 +398,9 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
                   onTranscript={(v) => void sendChat(v)}
                   onError={setError}
                 />
-                <button type="button" className="btn btn-signal" disabled={busy || !draft.trim()} onClick={() => sendChat(draft)}>
+                <Button type="button" variant="primary" disabled={busy || !draft.trim()} onClick={() => sendChat(draft)}>
                   {T.chatSend}
-                </button>
+                </Button>
               </div>
             </>
           )}
@@ -419,9 +429,9 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
               <li key={s}>{s}</li>
             ))}
           </ol>
-          <button type="button" className="btn btn-signal wide" onClick={() => setPhase("calibrate")} disabled={busy}>
+          <Button type="button" variant="primary" className="w-full" onClick={() => setPhase("calibrate")} disabled={busy}>
             {T.imReady}
-          </button>
+          </Button>
         </section>
       )}
 
@@ -434,15 +444,16 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
               <div className="stage">
                 <video ref={videoRef} autoPlay playsInline muted aria-label={T.calibrateCapture} />
               </div>
-              <button
+              <Button
                 type="button"
-                className="btn btn-signal wide"
+                variant="primary"
+                className="w-full"
                 onClick={() => {
                   if (videoRef.current) setFrame(captureFrame(videoRef.current, 640));
                 }}
               >
                 {T.calibrateCapture}
-              </button>
+              </Button>
             </>
           ) : (
             <>
@@ -461,32 +472,33 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
               <p className="fine" aria-live="polite">
                 {T.tapsCount(taps.length)}
               </p>
-              <label className="field">
-                <span>{T.distanceLabel}</span>
-                <input inputMode="decimal" value={distance} onChange={(e) => setDistance(e.target.value)} placeholder="0,50" />
-              </label>
+              <Input
+                label={T.distanceLabel}
+                inputMode="decimal"
+                value={distance}
+                onChange={setDistance}
+                placeholder="0,50"
+              />
               {experiment === "mrua_ramp" && (
-                <label className="field">
-                  <span>{T.thetaLabel}</span>
-                  <input inputMode="decimal" value={theta} onChange={(e) => setTheta(e.target.value)} placeholder="5" />
-                </label>
+                <Input label={T.thetaLabel} inputMode="decimal" value={theta} onChange={setTheta} placeholder="5" />
               )}
               <div className="row">
-                <button type="button" className="btn ghost" onClick={() => { setFrame(null); setTaps([]); }}>
+                <Button type="button" variant="secondary" onClick={() => { setFrame(null); setTaps([]); }}>
                   {T.retake}
-                </button>
-                <button type="button" className="btn ghost" onClick={() => setTaps([])} disabled={taps.length === 0}>
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => setTaps([])} disabled={taps.length === 0}>
                   {T.clearTaps}
-                </button>
+                </Button>
               </div>
-              <button
+              <Button
                 type="button"
-                className="btn btn-signal wide"
+                variant="primary"
+                className="w-full"
                 onClick={calibrate}
                 disabled={busy || taps.length !== 2 || !(Number(distance.replace(",", ".")) > 0)}
               >
                 {busy ? T.calibrating : T.calibrate}
-              </button>
+              </Button>
             </>
           )}
         </section>
@@ -515,19 +527,19 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
           )}
           <div className="record-controls">
             {runActive ? (
-              <button type="button" className="btn stop" onClick={stopRun} disabled={busy}>
+              <Button type="button" variant="secondary" className="mx-auto size-24 rounded-full" onClick={stopRun} disabled={busy}>
                 {T.runStop}
-              </button>
+              </Button>
             ) : (
-              <button type="button" className="btn record" onClick={startRun} disabled={busy}>
+              <Button type="button" variant="primary" className="mx-auto size-24 rounded-full" onClick={startRun} disabled={busy}>
                 {T.runStart}
-              </button>
+              </Button>
             )}
           </div>
           {!runActive && (
-            <button type="button" className="btn ghost wide" onClick={() => { setFrame(null); setTaps([]); setPhase("calibrate"); }}>
+            <Button type="button" variant="secondary" className="w-full" onClick={() => { setFrame(null); setTaps([]); setPhase("calibrate"); }}>
               {T.recalibrate}
-            </button>
+            </Button>
           )}
         </section>
       )}
@@ -562,13 +574,13 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
               <Plot t={result.series.t} y={result.series.a} label={T.plotA} unit={unit} />
             </div>
           )}
-          <button type="button" className="btn btn-signal wide" onClick={downloadReport} disabled={busy}>
+          <Button type="button" variant="primary" className="w-full" onClick={downloadReport} disabled={busy}>
             {busy ? T.reportBusy : T.makeReport}
-          </button>
+          </Button>
           <div className="row">
-            <button
+            <Button
               type="button"
-              className="btn ghost"
+              variant="secondary"
               onClick={() => {
                 setResult(null);
                 setLivePts([]);
@@ -576,10 +588,10 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
               }}
             >
               {T.runAgain}
-            </button>
-            <button type="button" className="btn ghost" onClick={() => router.push("/start")}>
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => router.push("/start")}>
               {T.newExperiment}
-            </button>
+            </Button>
           </div>
         </section>
       )}

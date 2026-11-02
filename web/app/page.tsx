@@ -1,4 +1,5 @@
 import { auth, signIn } from "@/auth";
+import { Button, ButtonLink } from "@/components/base/buttons/button";
 import { headers } from "next/headers";
 import { Nav } from "@/components/nav";
 import { Trajectory } from "@/components/trajectory";
@@ -22,9 +23,9 @@ export default async function Home() {
             <h1>{T.heroTitle}</h1>
             <p className="lede">{T.heroLede}</p>
             {session?.user ? (
-              <Link className="btn btn-signal" href="/start">
+              <ButtonLink href="/start" variant="primary" className="hero-actions">
                 {T.startCta}
-              </Link>
+              </ButtonLink>
             ) : (
               <form
                 action={async () => {
@@ -32,9 +33,9 @@ export default async function Home() {
                   await signIn("google");
                 }}
               >
-                <button type="submit" className="btn btn-signal">
+                <Button type="submit" variant="primary" className="hero-actions">
                   {T.signIn}
-                </button>
+                </Button>
               </form>
             )}
             <p className="fine">{T.heroFine}</p>
