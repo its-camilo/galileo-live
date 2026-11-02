@@ -5,7 +5,7 @@ from . import catalog, measure
 
 MOVE_M = 0.03
 MAX_RUN_S = 10.0
-MISS_LIMIT = 4
+MISS_S = 0.8
 MIN_POINTS = 6
 
 
@@ -73,9 +73,10 @@ def handle_frame(conn, sess, t: float, det: tuple[float, float] | None, px_per_m
 
     if sess["run_state"] == "measuring":
         if det is None:
-            miss = sess["miss"] + 1
-            conn.execute("UPDATE sessions SET miss = ? WHERE id = ?", (miss, sid))
-            if miss >= MISS_LIMIT:
+            last = conn.execute(
+                "SELECT MAX(t) AS last FROM points WHERE session_id = ?", (sid,)
+            ).fetchone()["last"]
+            if last is None or t - last >= MISS_S:
                 return finish(conn, sess, "left_frame", px_per_m)
             return _resp("measuring", False, None)
         conn.execute("UPDATE sessions SET miss = 0 WHERE id = ?", (sid,))

@@ -43,7 +43,9 @@ type Frame = { dataUrl: string; base64: string; width: number; height: number };
 type Tap = { x: number; y: number };
 type Msg = { role: "user" | "assistant"; text: string };
 
-const FRAME_MS = 200;
+const WAIT_FRAME_MS = 500;
+const MEASURE_FRAME_MS = 100;
+const MAX_IN_FLIGHT = 6;
 const GUIDE_MS = 3000;
 
 export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
@@ -70,6 +72,7 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const runStartRef = useRef(0);
   const inflight = useRef(0);
+  const runStateRef = useRef("idle");
   const stoppingRef = useRef(false);
   const lastSay = useRef("");
 
@@ -94,6 +97,7 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
         } else if (!s.experiment) {
           setPhase("chat");
           setMessages([{ role: "assistant", text: T.freeIntro }]);
+          speak(T.freeIntro, lang);
         } else if (s.px_per_m !== null) {
           setPhase("run");
         } else {
@@ -135,9 +139,24 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
   }, [phase, frame]);
 
   useEffect(() => {
+    runStateRef.current = runState;
+  }, [runState]);
+
+  useEffect(() => {
     if (!runActive || phase !== "run") return;
-    const id = window.setInterval(() => void sendFrame(), FRAME_MS);
-    return () => window.clearInterval(id);
+    let stopped = false;
+    let timer = 0;
+    const tick = () => {
+      if (stopped) return;
+      if (inflight.current < MAX_IN_FLIGHT) void sendFrame();
+      const measuring = runStateRef.current === "measuring";
+      timer = window.setTimeout(tick, measuring ? MEASURE_FRAME_MS : WAIT_FRAME_MS);
+    };
+    tick();
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runActive, phase]);
 

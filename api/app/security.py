@@ -20,7 +20,7 @@ IP_RULES = {
     "measure": (5, 600),
     "report": (5, 3600),
     "history": (30, 60),
-    "frame": (360, 60),
+    "frame": (900, 60),
 }
 
 # Maximum calls per user per UTC day (protects the Meta budget)
@@ -30,7 +30,7 @@ DAILY_QUOTA = {
     "agent": 300,
     "measure": 30,
     "report": 20,
-    "frame": 6000,
+    "frame": 3000,
 }
 
 

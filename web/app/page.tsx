@@ -1,14 +1,14 @@
 import { auth, signIn } from "@/auth";
 import { Button, ButtonLink } from "@/components/base/buttons/button";
-import { headers } from "next/headers";
 import { Nav } from "@/components/nav";
 import { Trajectory } from "@/components/trajectory";
-import { pickLang, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
+import { getLang } from "@/lib/lang";
 import { experimentUi } from "@/lib/catalog-ui";
 import Link from "next/link";
 
 export default async function Home() {
-  const lang = pickLang((await headers()).get("accept-language"));
+  const lang = await getLang();
   const T = t(lang);
   const session = await auth();
   const mrua = experimentUi("mrua_ramp", lang);

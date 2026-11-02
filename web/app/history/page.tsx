@@ -1,14 +1,14 @@
 import { auth } from "@/auth";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { HistoryList } from "@/components/history-list";
 import { Nav } from "@/components/nav";
-import { pickLang, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
+import { getLang } from "@/lib/lang";
 
 export default async function HistoryPage() {
   const session = await auth();
   if (!session?.user) redirect("/");
-  const lang = pickLang((await headers()).get("accept-language"));
+  const lang = await getLang();
   const T = t(lang);
   return (
     <>

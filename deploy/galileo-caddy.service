@@ -1,0 +1,20 @@
+[Unit]
+Description=Galileo Live public edge (Caddy, HTTPS to the API)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+Group=ubuntu
+Environment=XDG_DATA_HOME=/data/galileo-live/caddy/data
+Environment=XDG_CONFIG_HOME=/data/galileo-live/caddy/config
+ExecStart=/usr/bin/caddy run --config /data/galileo-live/caddy/Caddyfile --adapter caddyfile
+ExecReload=/usr/bin/caddy reload --config /data/galileo-live/caddy/Caddyfile --adapter caddyfile
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

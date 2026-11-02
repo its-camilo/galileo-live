@@ -44,8 +44,10 @@ def test_measures_uniform_acceleration_live(db):
         last = _feed(round(t, 2), (rest[0] + s_px, rest[1]), ppm)
         t += 0.1
     assert last["state"] == "measuring"
-    for i in range(4):
+    for i in range(10):
         last = _feed(round(3.1 + i * 0.1, 2), None, ppm)
+        if last["state"] == "results":
+            break
     assert last["state"] == "results"
     assert last["result"]["key_name"] == "a"
     assert last["result"]["key_value"] == pytest.approx(a, rel=0.03)

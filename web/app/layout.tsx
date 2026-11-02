@@ -1,9 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Instrument_Sans, Instrument_Serif, IBM_Plex_Mono } from "next/font/google";
-import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { Toaster } from "@/components/base/toast/toast";
-import { pickLang } from "@/lib/i18n";
+import { SpeechUnlock } from "@/components/speech-unlock";
+import { getLang } from "@/lib/lang";
 import "./globals.css";
 
 const display = Instrument_Serif({ subsets: ["latin"], weight: "400", style: ["normal", "italic"], variable: "--font-display", display: "swap" });
@@ -23,11 +23,12 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  const lang = pickLang((await headers()).get("accept-language"));
+  const lang = await getLang();
   return (
     <html lang={lang} className={`${display.variable} ${body.variable} ${mono.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         {children}
+        <SpeechUnlock />
         <Toaster position="top-center" />
       </body>
     </html>

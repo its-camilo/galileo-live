@@ -1,5 +1,6 @@
 import { auth, signIn, signOut } from "@/auth";
 import { Button } from "@/components/base/buttons/button";
+import { LangSwitch } from "@/components/lang-switch";
 import { t, type Lang } from "@/lib/i18n";
 
 export async function Nav({ lang }: { lang: Lang }) {
@@ -12,6 +13,7 @@ export async function Nav({ lang }: { lang: Lang }) {
         {T.brand}
       </a>
       <nav className="nav-links" aria-label="Principal">
+        <LangSwitch lang={lang} />
         {session?.user ? (
           <>
             <a className="text-sm font-medium" href="/history">
