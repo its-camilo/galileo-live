@@ -19,8 +19,8 @@ def _resp(state: str, detected: bool, x_m: float | None, event: str | None = Non
     }
 
 
-def reference(sess) -> tuple[str, float | None]:
-    theta = sess["theta_deg"]
+def reference(sess, theta: float | None = None) -> tuple[str, float | None]:
+    theta = theta if theta is not None else sess["theta_deg"]
     if sess["experiment"] in catalog.EXPERIMENTS:
         exp = catalog.EXPERIMENTS[sess["experiment"]]
         if exp.id == "mrua_ramp" and theta:
@@ -29,10 +29,21 @@ def reference(sess) -> tuple[str, float | None]:
     return "a", catalog.ramp_reference(theta) if theta else None
 
 
+def store_result(conn, sid: str, result: dict) -> None:
+    conn.execute("DELETE FROM results WHERE session_id = ?", (sid,))
+    conn.execute(
+        "INSERT INTO results (session_id, key_name, key_value, ref_value, error_pct, r2, series) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (sid, result["key_name"], result["key_value"], result["ref_value"], result["error_pct"], result["r2"], json.dumps(result["series"])),
+    )
+    conn.execute("UPDATE sessions SET state = 'results' WHERE id = ?", (sid,))
+
+
 def object_prompt(sess) -> str:
+    if sess["object_prompt"]:
+        return sess["object_prompt"]
     if sess["experiment"] in catalog.EXPERIMENTS:
         return catalog.EXPERIMENTS[sess["experiment"]].object_prompt
-    return sess["object_prompt"] or "object"
+    return "object"
 
 
 def start(conn, session_id: str) -> None:
@@ -102,10 +113,5 @@ def finish(conn, sess, event: str, px_per_m: float) -> dict:
     xs = [math.dist((row["cx"], row["cy"]), anchor) / px_per_m for row in rows]
     key_name, ref = reference(sess)
     result = measure.analyze_motion(ts, xs, key_name, ref)
-    conn.execute("DELETE FROM results WHERE session_id = ?", (sid,))
-    conn.execute(
-        "INSERT INTO results (session_id, key_name, key_value, ref_value, error_pct, r2, series) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (sid, result["key_name"], result["key_value"], result["ref_value"], result["error_pct"], result["r2"], json.dumps(result["series"])),
-    )
-    conn.execute("UPDATE sessions SET state = 'results' WHERE id = ?", (sid,))
+    store_result(conn, sid, result)
     return _resp("results", True, None, event=event, result=result)

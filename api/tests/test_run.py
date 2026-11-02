@@ -110,7 +110,7 @@ def test_run_frame_endpoint_with_fake_sam(db, monkeypatch):
     monkeypatch.setenv("APP_JWT_SECRET", "k" * 40)
     config.get_settings.cache_clear()
     with connect() as c:
-        c.execute("UPDATE users SET consent_version = ? WHERE id = 'u'", ("2026-11-03",))
+        c.execute("UPDATE users SET consent_version = ? WHERE id = 'u'", ("2026-11-04",))
 
     class FakeSam:
         def sam_image_boxes(self, b64, concept):
@@ -208,3 +208,62 @@ def test_diagram_prompt_uses_only_catalog_kind(db, monkeypatch, tmp_path):
 
     monkeypatch.setattr(routes, "_meta", lambda: Down())
     assert routes._diagram(sess, tmp_path) is None
+
+
+def test_measure_endpoint_end_to_end_with_fake_meta(db, monkeypatch, tmp_path):
+    import subprocess
+    import time
+
+    import jwt
+    from fastapi.testclient import TestClient
+
+    from app import config, routes
+    from app.db import connect
+    from app.main import app
+
+    monkeypatch.setenv("APP_JWT_SECRET", "k" * 40)
+    monkeypatch.setenv("GALILEO_DATA_DIR", str(tmp_path))
+    config.get_settings.cache_clear()
+    with connect() as c:
+        c.execute("UPDATE users SET consent_version = ? WHERE id = 'u'", ("2026-11-04",))
+        c.execute("UPDATE sessions SET px_per_m = 100, experiment = 'mrua_ramp', object_prompt = 'toy car' WHERE id = 's'")
+
+    fps, a, ppm = 10, 0.4, 100.0
+    n = 30
+    video = tmp_path / "in.mp4"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"color=c=gray:s=640x480:r={fps}:d={n/fps}",
+                    "-pix_fmt", "yuv420p", str(video)], check=True)
+
+    text_parts = []
+    for i in range(n):
+        s_px = 0.5 * a * (i / fps) ** 2 * ppm
+        x1 = 100 + s_px
+        text_parts.append(f"<{i}f>0<|box;x1={x1:.1f};y1=200;x2={x1 + 40:.1f};y2=240;w=640;h=480|>")
+    sam_text = "".join(text_parts)
+
+    class FakeMeta:
+        deleted = []
+
+        def upload_file(self, path):
+            return "file-123"
+
+        def sam_track_video(self, file_id, concept):
+            assert concept == "toy car" and file_id == "file-123"
+            return sam_text
+
+        def delete_file(self, file_id):
+            FakeMeta.deleted.append(file_id)
+
+    monkeypatch.setattr(routes, "_meta", lambda: FakeMeta())
+    now = int(time.time())
+    tok = jwt.encode({"sub": "u", "aud": "galileo-vps", "iss": "galileo-web", "iat": now, "exp": now + 300},
+                     "k" * 40, algorithm="HS256")
+    with TestClient(app, base_url="http://vps-oracle-01.tailfb0395.ts.net") as client:
+        with open(video, "rb") as fh:
+            r = client.post("/measure", data={"session_id": "s"},
+                            files={"video": ("clip.mp4", fh, "video/mp4")},
+                            headers={"Authorization": f"Bearer {tok}"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert FakeMeta.deleted == ["file-123"]
+    assert body["key_value"] == pytest.approx(a, rel=0.1)

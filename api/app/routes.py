@@ -13,8 +13,11 @@ from . import blob, catalog, reports, run
 from .auth import CONSENT_VERSION, require_consent, require_user
 from .config import get_settings
 from .db import connect
-from .meta import MetaClient, MetaNotConfigured
-from .security import rate_limit, spend
+import shutil
+
+from . import media
+from .meta import MetaClient, MetaNotConfigured, parse_frames, track_centroids
+from .security import acquire_heavy, rate_limit, release_heavy, spend
 
 router = APIRouter()
 
@@ -590,3 +593,87 @@ def _diagram(sess, out_dir: Path) -> Path | None:
     path = out_dir / "diagram.png"
     path.write_bytes(png)
     return path
+
+
+MAX_CLIP_BYTES = 50 * 1024 * 1024
+MAX_CLIP_SECONDS = 10.5
+MOVE_M_TRIM = 0.03
+
+
+class ObjectIn(BaseModel):
+    session_id: str = Field(max_length=64)
+    object_prompt: str = Field(min_length=2, max_length=60, pattern=r"^[A-Za-z][A-Za-z \-]{1,59}$")
+
+
+@router.post("/session/object", dependencies=[Depends(rate_limit("sessions"))])
+def set_object(body: ObjectIn, user: dict = Depends(require_consent)):
+    with connect() as conn:
+        sess = _session(conn, body.session_id, user["sub"])
+        conn.execute("UPDATE sessions SET object_prompt = ? WHERE id = ?", (body.object_prompt.strip(), sess["id"]))
+    return {"object_prompt": body.object_prompt.strip()}
+
+
+@router.post("/measure", dependencies=[Depends(rate_limit("measure"))])
+async def measure_clip(
+    session_id: str = Form(..., max_length=64),
+    video: UploadFile = File(...),
+    theta_deg: float | None = Form(None, ge=0, le=90),
+    user: dict = Depends(require_consent),
+):
+    """Graba-luego-analiza: el video se normaliza, SAM lo sigue, se borra en Meta y en el VPS."""
+    settings = get_settings()
+    with connect() as conn:
+        sess = _session(conn, session_id, user["sub"])
+    _px_per_m(sess)
+    spend(user["sub"], "measure")
+
+    acquire_heavy()
+    workdir = settings.uploads_dir / session_id
+    workdir.mkdir(parents=True, exist_ok=True)
+    client = None
+    file_id = None
+    try:
+        raw = workdir / f"raw-{uuid.uuid4().hex}"
+        clip = workdir / f"clip-{uuid.uuid4().hex}.mp4"
+        raw.write_bytes(await video.read(MAX_CLIP_BYTES + 1))
+        if raw.stat().st_size > MAX_CLIP_BYTES:
+            raise HTTPException(413, "clip too large")
+        media.normalize_video(raw, clip)
+        info = media.probe(clip)
+        if info.duration > MAX_CLIP_SECONDS:
+            raise HTTPException(422, "clip longer than 10 seconds")
+        client = _meta()
+        file_id = client.upload_file(clip)
+        frames = parse_frames(client.sam_track_video(file_id, run.object_prompt(sess)))
+        track = track_centroids(frames, out_w=FRAME_WIDTH, out_h=info.height * FRAME_WIDTH / info.width)
+    finally:
+        if client is not None and file_id is not None:
+            try:
+                client.delete_file(file_id)
+            except Exception:
+                pass
+        shutil.rmtree(workdir, ignore_errors=True)
+        release_heavy()
+
+    if len(track) < 5:
+        raise HTTPException(422, "not enough detections of the object in the clip")
+
+    from . import measure
+
+    t_all = [idx / info.fps for idx, _, _ in track]
+    disp_all = measure.displacement_m([(cx, cy) for _, cx, cy in track], sess["px_per_m"])
+    start = 0
+    for i, s in enumerate(disp_all):
+        if abs(s) >= MOVE_M_TRIM * 1.0:
+            start = max(0, i - 1)
+            break
+    t = [x - t_all[start] for x in t_all[start:]]
+    disp = disp_all[start:] - disp_all[start]
+    if len(t) < 5:
+        raise HTTPException(422, "the object did not move enough in the clip")
+
+    key_name, ref = run.reference(sess, theta_deg)
+    result = measure.analyze_motion(t, disp, key_name, ref)
+    with connect() as conn:
+        run.store_result(conn, session_id, result)
+    return result

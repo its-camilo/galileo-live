@@ -5,7 +5,7 @@ from .config import get_settings
 from .db import connect
 
 MAX_TOKEN_LIFETIME = 600
-CONSENT_VERSION = "2026-11-03"
+CONSENT_VERSION = "2026-11-04"
 
 
 def require_user(authorization: str | None = Header(default=None)) -> dict:

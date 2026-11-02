@@ -31,8 +31,8 @@ export default function PrivacyPage() {
           para continuar la configuración del experimento.
         </li>
         <li>
-          <strong>Imagen y voz:</strong> fotogramas de la cámara (unos 5 por segundo durante la medición y una imagen
-          cada 3 segundos durante la guía), y audio de voz cuando usas el micrófono.
+          <strong>Video, imagen y voz:</strong> al medir grabas un video de hasta 10 segundos del experimento. Durante
+          la guía se envía una imagen cada 3 segundos, y el audio de voz cuando usas el micrófono.
         </li>
         <li>
           <strong>Informes:</strong> los PDF generados, que contienen tu nombre y los datos del experimento.
@@ -103,7 +103,10 @@ export default function PrivacyPage() {
 
       <h2>7. Conservación y eliminación</h2>
       <ul>
-        <li>No grabamos videos. Los fotogramas y el audio se procesan en tiempo real y no se guardan en nuestro servidor.</li>
+        <li>
+          El video se guarda solo mientras se analiza: lo subimos a Meta para detectar el objeto, y lo borramos de Meta y de nuestro servidor al terminar.
+        </li>
+        <li>Las imágenes de la guía y el audio se procesan y no se guardan en nuestro servidor.</li>
         <li>Las posiciones medidas y el historial de conversación se guardan con tu cuenta hasta que solicites su supresión.</li>
         <li>Tu cuenta, tu historial y tus informes se conservan hasta que solicites su supresión.</li>
         <li>Los proveedores pueden conservar datos según sus propias políticas, como se indicó en el punto 6.</li>

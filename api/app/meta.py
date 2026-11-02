@@ -125,6 +125,10 @@ class MetaClient:
                     break
         return "".join(parts)
 
+    def delete_file(self, file_id: str) -> None:
+        r = httpx.delete(f"{self._base}/files/{file_id}", headers=self._auth, timeout=60)
+        r.raise_for_status()
+
     def sam_image_boxes(self, image_b64: str, concept: str) -> list[tuple[float, ...]]:
         body = {
             "model": SAM_MODEL,

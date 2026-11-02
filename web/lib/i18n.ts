@@ -30,7 +30,7 @@ const es = {
     "Galileo Live usa tu cámara, tu micrófono y tu cuenta de Google para medir el experimento. Revisa cada autorización. Puedes leer la política de privacidad antes de aceptar.",
   consentAge: "Tengo 18 años o más, o tengo autorización de mi representante legal.",
   consentData:
-    "Autorizo el tratamiento de mi cuenta, los datos del experimento, las imágenes de la cámara, mi voz y el historial de conversación con el asistente, para las finalidades de la política de privacidad.",
+    "Autorizo el tratamiento de mi cuenta, los datos del experimento, el video de hasta 10 segundos del experimento, las imágenes de la cámara, mi voz y el historial de conversación con el asistente, para las finalidades de la política de privacidad.",
   consentMeta:
     "Entiendo que el contenido se procesa con Meta Model API como encargado. Meta no lo usa para entrenar sus modelos en el nivel Standard, pero puede usar datos técnicos de uso.",
   consentTransfer:
@@ -69,7 +69,7 @@ const es = {
   recordStart: "Grabar",
   recordStop: "Detener",
   liveNow: "Asistente",
-  recordHint: "Graba hasta 10 segundos. El asistente te sigue guiando mientras preparas la toma.",
+  recordHint: "Graba hasta 10 segundos. Cuando termines, el sistema analiza el video con SAM y calcula el resultado.",
   recordTimer: (s: number) => `${s} s de 10 s`,
   recalibrate: "Volver a calibrar",
   processing: "Analizando el video. Esto toma unos segundos.",
@@ -103,6 +103,11 @@ const es = {
   errGeneric: "Algo salió mal. Intenta de nuevo.",
   resultSpoken: (label: string, value: string) => `Resultado: ${label} igual a ${value} metros por segundo al cuadrado.`,
   calibrateSpoken: "Escala lista. Ya puedes grabar.",
+  objectHint: "Escribe el objeto en inglés, con dos o más letras (por ejemplo: toy car, ball, eraser).",
+  recordingSpoken: "Grabando. Tienes hasta diez segundos.",
+  recordingNow: (s: number) => `Grabando: ${s} s`,
+  voiceTest: "Si me escuchas, la voz funciona.",
+  voiceTestButton: "Probar voz",
   noSpeechHeard: "No te escuché bien. Intenta de nuevo.",
   consentTrainingReport:
     "Opcional: autorizo que Meta use el texto de mi informe, generado solo con los números del experimento y sin mi nombre ni mis datos, para entrenar sus modelos. Si no lo acepto, el informe usa un texto fijo.",
@@ -162,7 +167,7 @@ const en: Dict = {
     "Galileo Live uses your camera, microphone and Google account to measure the experiment. Review each authorization. You can read the privacy policy before accepting.",
   consentAge: "I am 18 or older, or my legal guardian has authorized my use.",
   consentData:
-    "I authorize the processing of my account, experiment data, camera images, my voice and my conversation history with the assistant, for the purposes in the privacy policy.",
+    "I authorize the processing of my account, experiment data, the video of up to 10 seconds of the experiment, camera images, my voice and my conversation history with the assistant, for the purposes in the privacy policy.",
   consentMeta:
     "I understand the content is processed by Meta Model API as a processor. Meta does not use it to train its models at the Standard tier, but may use technical usage data.",
   consentTransfer:
@@ -201,7 +206,7 @@ const en: Dict = {
   recordStart: "Record",
   recordStop: "Stop",
   liveNow: "Assistant",
-  recordHint: "Record up to 10 seconds. The assistant keeps guiding you while you frame the shot.",
+  recordHint: "Record up to 10 seconds. When you finish, the system analyzes the video with SAM and computes the result.",
   recordTimer: (s: number) => `${s} s of 10 s`,
   recalibrate: "Calibrate again",
   processing: "Analyzing the video. This takes a few seconds.",
@@ -235,6 +240,11 @@ const en: Dict = {
   errGeneric: "Something went wrong. Try again.",
   resultSpoken: (label: string, value: string) => `Result: ${label} equals ${value} meters per second squared.`,
   calibrateSpoken: "Scale ready. You can record now.",
+  objectHint: "Type the object in English, two or more letters (for example: toy car, ball, eraser).",
+  recordingSpoken: "Recording. You have up to ten seconds.",
+  recordingNow: (s: number) => `Recording: ${s} s`,
+  voiceTest: "If you can hear me, the voice works.",
+  voiceTestButton: "Test voice",
   noSpeechHeard: "I didn't catch that. Try again.",
   consentTrainingReport:
     "Optional: I authorize Meta to use my report text, generated only from the experiment numbers and without my name or data, to train its models. If I decline, the report uses fixed text.",
