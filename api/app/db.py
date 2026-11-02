@@ -33,6 +33,13 @@ CREATE TABLE IF NOT EXISTS reports (
     blob_url TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS points (
+    session_id TEXT NOT NULL REFERENCES sessions(id),
+    t REAL NOT NULL,
+    cx REAL NOT NULL,
+    cy REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS points_session ON points (session_id, t);
 CREATE TABLE IF NOT EXISTS usage (
     user_id TEXT NOT NULL,
     day TEXT NOT NULL,
@@ -64,3 +71,22 @@ def init_db() -> None:
         for name in ("consent_version", "consent_at", "consent_scope"):
             if name not in cols:
                 conn.execute(f"ALTER TABLE users ADD COLUMN {name} TEXT")
+        migrate_columns(conn, "sessions", {
+            "object_prompt": "TEXT",
+            "theta_deg": "REAL",
+            "description": "TEXT",
+            "run_state": "TEXT NOT NULL DEFAULT 'idle'",
+            "run_t0": "REAL",
+            "anchor_x": "REAL",
+            "anchor_y": "REAL",
+            "miss": "INTEGER NOT NULL DEFAULT 0",
+            "chat": "TEXT",
+        })
+        migrate_columns(conn, "results", {"series": "TEXT"})
+
+
+def migrate_columns(conn, table: str, columns: dict[str, str]) -> None:
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    for name, ddl in columns.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")

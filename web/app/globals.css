@@ -881,3 +881,58 @@ textarea {
     opacity: 1;
   }
 }
+
+/* Modo libre y medición en vivo */
+.card.free {
+  border-color: var(--signal-deep);
+}
+
+.thread {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+  display: grid;
+  gap: 10px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.bubble {
+  display: grid;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  max-width: 90%;
+  background: #fff;
+  border: 1px solid var(--line);
+}
+
+.bubble.user {
+  justify-self: end;
+  background: var(--ink);
+  color: var(--bench);
+  border-color: var(--ink);
+}
+
+.bubble .who {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.bubble.user .who {
+  color: var(--bench);
+  opacity: 0.8;
+}
+
+.ready p:first-child {
+  font-size: 18px;
+}
+
+.readout-line {
+  margin: 12px 0 8px;
+}
+
+.readout-line .readout {
+  font-size: 22px;
+  color: var(--trace);
+}

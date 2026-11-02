@@ -118,6 +118,43 @@ class MetaClient:
                     break
         return "".join(parts)
 
+    def sam_image_boxes(self, image_b64: str, concept: str) -> list[tuple[float, ...]]:
+        body = {
+            "model": SAM_MODEL,
+            "stream": True,
+            "input": [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": concept},
+                        {"type": "input_image", "image_url": f"data:image/jpeg;base64,{image_b64}"},
+                    ],
+                }
+            ],
+        }
+        parts: list[str] = []
+        with httpx.stream(
+            "POST",
+            f"{self._base}/responses",
+            json=body,
+            headers={**self._auth, "Accept": "text/event-stream"},
+            timeout=30,
+        ) as r:
+            r.raise_for_status()
+            for line in r.iter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data = line[6:]
+                if data == "[DONE]":
+                    break
+                event = json.loads(data)
+                if event.get("type") == "response.output_text.delta":
+                    parts.append(event.get("delta", ""))
+                elif event.get("type") == "response.completed":
+                    break
+        return [tuple(float(g) for g in b.groups()) for b in BOX_RE.finditer("".join(parts))]
+
     def generate_image(self, prompt: str) -> dict:
         r = httpx.post(
             f"{self._base}/images/generations",

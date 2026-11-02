@@ -53,8 +53,8 @@ Todos requieren `Authorization: Bearer <token>`, salvo `/health`.
 | POST | `/sessions` | Listo (crea sesión; no está en la especificación, es necesario para el resto) |
 | POST | `/stt` | Listo; respuesta de Voice Transcribe asumida (ver pendientes) |
 | POST | `/live` | Listo; frame base64 JPEG → Muse Spark |
-| POST | `/calibrate` | Listo con puntos + distancia; con frame (SAM) pendiente |
-| POST | `/measure` | Listo: normaliza, SAM, cálculo, guarda resultados, borra el video |
+| POST | `/calibrate` | Listo con dos puntos + distancia; calibración con regla por SAM pendiente |
+| POST | `/run/start`, `/run/frame`, `/run/stop` | Listo: medición en vivo (frames por SAM por imagen, sin subir video) |
 | POST | `/agent` | Listo con herramienta `select_experiment`; resto pendiente |
 | POST | `/report` | Listo: compila con tectonic y sube el PDF privado a Vercel Blob |
 | GET | `/reports/{id}/pdf` | Listo: descarga el PDF del usuario a través de la API (Blob es privado) |

@@ -1,20 +1,23 @@
 import json
 import re
-import shutil
+import threading
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from . import blob, catalog, measure, media, reports
+from . import blob, catalog, reports, run
 from .auth import CONSENT_VERSION, require_consent, require_user
 from .config import get_settings
 from .db import connect
-from .meta import MetaClient, MetaNotConfigured, parse_frames, track_centroids
-from .security import acquire_heavy, rate_limit, release_heavy, spend
+from .meta import MetaClient, MetaNotConfigured
+from .security import rate_limit, spend
 
 router = APIRouter()
+
+FRAME_WIDTH = 640
+_run_lock = threading.Lock()
 
 LIVE_SYSTEM = (
     "You are a physics lab assistant watching a phone camera. Reply ONLY with JSON: "
@@ -24,8 +27,14 @@ LIVE_SYSTEM = (
 )
 
 AGENT_SYSTEM = (
-    "You are Galileo, a neutral physics lab assistant. Short sentences. Reply in {lang}. "
-    "Use select_experiment to pick the closest catalog experiment. Never invent measurements."
+    "You are Galileo, a neutral physics lab guide. Short sentences, one question at a time. Reply in {lang}. "
+    "The app measures the position of ONE object over time with the camera and fits x(t) = x0 + v0 t + a t^2/2 "
+    "to get the acceleration a (or g for free fall). It supports objects moving in a straight line with constant "
+    "acceleration. If the user asks for something else (pendulum, circular motion, etc.), say so briefly and offer "
+    "the closest catalog experiment. Find out what object to track and whether there is a ramp angle. "
+    "When you have enough information, call configure_custom with object_prompt as a short English noun phrase "
+    "(for example 'toy car' or 'ball') and a short description. For catalog experiments call select_experiment. "
+    "Never invent measurements."
 )
 
 AGENT_TOOLS = [
@@ -33,17 +42,30 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "select_experiment",
-            "description": "Pick the closest catalog experiment for the user's description and materials.",
+            "description": "Pick the closest catalog experiment (mrua_ramp or free_fall) for the user's description.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "description": {"type": "string"},
-                    "materials": {"type": "string"},
-                },
+                "properties": {"description": {"type": "string"}},
                 "required": ["description"],
             },
         },
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "configure_custom",
+            "description": "Configure a free experiment: the object to track and what the user wants to measure.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "object_prompt": {"type": "string", "description": "Short English noun phrase, e.g. 'toy car'."},
+                    "description": {"type": "string"},
+                    "theta_deg": {"type": "number", "description": "Ramp angle in degrees, if any."},
+                },
+                "required": ["object_prompt", "description"],
+            },
+        },
+    },
 ]
 
 
@@ -74,10 +96,11 @@ def create_session(body: SessionIn, user: dict = Depends(require_consent)):
         raise HTTPException(400, "unknown experiment")
     session_id = uuid.uuid4().hex
     state = "setup" if body.experiment else "choose"
+    object_prompt = catalog.EXPERIMENTS[body.experiment].object_prompt if body.experiment else None
     with connect() as conn:
         conn.execute(
-            "INSERT INTO sessions (id, user_id, experiment, lang, state) VALUES (?, ?, ?, ?, ?)",
-            (session_id, user["sub"], body.experiment, body.lang, state),
+            "INSERT INTO sessions (id, user_id, experiment, lang, state, object_prompt) VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, user["sub"], body.experiment, body.lang, state, object_prompt),
         )
     return {"id": session_id, "state": state}
 
@@ -98,7 +121,7 @@ async def stt(
 
 class LiveIn(BaseModel):
     session_id: str = Field(max_length=64)
-    frame: str = Field(max_length=2_000_000)  # base64 JPEG, ~640 px wide
+    frame: str = Field(max_length=2_000_000)
 
 
 @router.post("/live", dependencies=[Depends(rate_limit("live"))])
@@ -139,6 +162,8 @@ class CalibrateIn(BaseModel):
 
 @router.post("/calibrate", dependencies=[Depends(rate_limit("calibrate"))])
 def calibrate(body: CalibrateIn, user: dict = Depends(require_consent)):
+    from . import measure
+
     with connect() as conn:
         sess = _session(conn, body.session_id, user["sub"])
         try:
@@ -152,67 +177,55 @@ def calibrate(body: CalibrateIn, user: dict = Depends(require_consent)):
     return {"px_per_m": px_per_m}
 
 
-@router.post("/measure", dependencies=[Depends(rate_limit("measure"))])
-async def measure_clip(
-    session_id: str = Form(..., max_length=64),
-    video: UploadFile = File(...),
-    theta_deg: float | None = Form(None, ge=0, le=90),
-    user: dict = Depends(require_consent),
-):
-    settings = get_settings()
-    with connect() as conn:
-        sess = _session(conn, session_id, user["sub"])
-    if not sess["experiment"] or sess["px_per_m"] is None:
+class SessionRef(BaseModel):
+    session_id: str = Field(max_length=64)
+
+
+class FrameIn(BaseModel):
+    session_id: str = Field(max_length=64)
+    t: float = Field(ge=0, le=120)
+    height: int = Field(ge=100, le=2000)
+    frame: str = Field(max_length=400_000)
+
+
+def _px_per_m(sess) -> float:
+    if sess["px_per_m"] is None or sess["experiment"] is None:
         raise HTTPException(409, "choose an experiment and calibrate first")
-    exp = catalog.EXPERIMENTS[sess["experiment"]]
-    spend(user["sub"], "measure")
+    return sess["px_per_m"]
 
-    acquire_heavy()
-    workdir = settings.uploads_dir / session_id
-    workdir.mkdir(parents=True, exist_ok=True)
-    try:
-        raw = workdir / f"raw-{uuid.uuid4().hex}"
-        clip = workdir / f"clip-{uuid.uuid4().hex}.mp4"
-        raw.write_bytes(await video.read(MAX_CLIP_BYTES + 1))
-        if raw.stat().st_size > MAX_CLIP_BYTES:
-            raise HTTPException(413, "clip too large")
-        media.normalize_video(raw, clip)
-        info = media.probe(clip)
-        if info.duration > MAX_CLIP_SECONDS:
-            raise HTTPException(422, "clip longer than 10 seconds")
-        client = _meta()
-        file_id = client.upload_file(clip)
-        frames = parse_frames(client.sam_track_video(file_id, exp.object_prompt))
-        track = track_centroids(
-            frames,
-            out_w=media.NORMALIZED_WIDTH,
-            out_h=info.height * media.NORMALIZED_WIDTH / info.width,
-        )
-    finally:
-        shutil.rmtree(workdir, ignore_errors=True)
-        release_heavy()
 
-    if len(track) < 5:
-        raise HTTPException(422, "not enough detections of the object in the clip")
-
-    t = [idx / info.fps for idx, _, _ in track]
-    displacement = measure.displacement_m([(cx, cy) for _, cx, cy in track], sess["px_per_m"])
-    ref = catalog.ramp_reference(theta_deg) if exp.id == "mrua_ramp" and theta_deg else exp.default_ref
-    result = measure.analyze_motion(t, displacement, exp.key_name, ref)
-
+@router.post("/run/start", dependencies=[Depends(rate_limit("sessions"))])
+def run_start(body: SessionRef, user: dict = Depends(require_consent)):
     with connect() as conn:
-        conn.execute("DELETE FROM results WHERE session_id = ?", (session_id,))
-        conn.execute(
-            "INSERT INTO results (session_id, key_name, key_value, ref_value, error_pct, r2) VALUES (?, ?, ?, ?, ?, ?)",
-            (session_id, result["key_name"], result["key_value"], result["ref_value"], result["error_pct"], result["r2"]),
-        )
-        conn.execute("UPDATE sessions SET state = 'results' WHERE id = ?", (session_id,))
-    reports.plot_series(result["series"], settings.plots_dir / session_id, exp.key_name)
-    return result
+        sess = _session(conn, body.session_id, user["sub"])
+        _px_per_m(sess)
+        with _run_lock:
+            run.start(conn, sess["id"])
+    return {"state": "waiting"}
 
 
-MAX_CLIP_BYTES = 50 * 1024 * 1024
-MAX_CLIP_SECONDS = 10.5
+@router.post("/run/frame", dependencies=[Depends(rate_limit("frame"))])
+def run_frame(body: FrameIn, user: dict = Depends(require_consent)):
+    spend(user["sub"], "frame")
+    with connect() as conn:
+        sess = _session(conn, body.session_id, user["sub"])
+    if sess["run_state"] not in ("waiting", "measuring"):
+        raise HTTPException(409, "run is not active")
+    boxes = _meta().sam_image_boxes(body.frame, run.object_prompt(sess))
+    det = None
+    if boxes:
+        x1, y1, x2, y2, w, h = max(boxes, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]))
+        det = ((x1 + x2) / 2 / w * FRAME_WIDTH, (y1 + y2) / 2 / h * body.height)
+    with _run_lock, connect() as conn:
+        sess = _session(conn, body.session_id, user["sub"])
+        return run.handle_frame(conn, sess, body.t, det, _px_per_m(sess))
+
+
+@router.post("/run/stop", dependencies=[Depends(rate_limit("sessions"))])
+def run_stop(body: SessionRef, user: dict = Depends(require_consent)):
+    with _run_lock, connect() as conn:
+        sess = _session(conn, body.session_id, user["sub"])
+        return run.stop(conn, sess, _px_per_m(sess))
 
 
 class AgentIn(BaseModel):
@@ -226,32 +239,48 @@ def agent(body: AgentIn, user: dict = Depends(require_consent)):
     with connect() as conn:
         sess = _session(conn, body.session_id, user["sub"])
         client = _meta()
-        messages = [
-            {"role": "developer", "content": AGENT_SYSTEM.format(lang=sess["lang"])},
-            {"role": "user", "content": body.text},
-        ]
+        history = json.loads(sess["chat"] or "[]")[-16:]
+        messages = [{"role": "developer", "content": AGENT_SYSTEM.format(lang=sess["lang"])}]
+        messages += history
+        messages.append({"role": "user", "content": body.text})
         actions: list[dict] = []
         say = ""
         for _ in range(3):
             message = client.chat(messages, tools=AGENT_TOOLS)["choices"][0]["message"]
-            tool_calls = message.get("tool_calls") or []
-            if not tool_calls:
+            calls = message.get("tool_calls") or []
+            if not calls:
                 say = message.get("content") or ""
                 break
             messages.append(message)
-            for call in tool_calls:
+            for call in calls:
                 args = json.loads(call["function"].get("arguments") or "{}")
-                exp = catalog.select_experiment(args.get("description", ""))
-                conn.execute(
-                    "UPDATE sessions SET experiment = ?, state = 'setup' WHERE id = ?",
-                    (exp.id, sess["id"]),
-                )
-                actions.append({"type": "experiment", "id": exp.id})
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": call["id"],
-                    "content": json.dumps({"id": exp.id, "title": exp.title[sess["lang"]]}),
-                })
+                name = call["function"].get("name")
+                if name == "select_experiment":
+                    exp = catalog.select_experiment(args.get("description", ""))
+                    conn.execute(
+                        "UPDATE sessions SET experiment = ?, object_prompt = ?, state = 'setup' WHERE id = ?",
+                        (exp.id, exp.object_prompt, sess["id"]),
+                    )
+                    actions.append({"type": "experiment", "id": exp.id})
+                    result = {"id": exp.id}
+                elif name == "configure_custom":
+                    theta = args.get("theta_deg")
+                    conn.execute(
+                        "UPDATE sessions SET experiment = 'custom', object_prompt = ?, description = ?, theta_deg = ?, state = 'setup' WHERE id = ?",
+                        (
+                            str(args.get("object_prompt", "object"))[:60],
+                            str(args.get("description", ""))[:300],
+                            float(theta) if theta is not None else None,
+                            sess["id"],
+                        ),
+                    )
+                    actions.append({"type": "custom"})
+                    result = {"ok": True}
+                else:
+                    result = {"error": "unknown tool"}
+                messages.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result)})
+        history += [{"role": "user", "content": body.text}, {"role": "assistant", "content": say}]
+        conn.execute("UPDATE sessions SET chat = ? WHERE id = ?", (json.dumps(history[-20:]), sess["id"]))
         state = conn.execute("SELECT state FROM sessions WHERE id = ?", (sess["id"],)).fetchone()["state"]
     return {"say": say, "state": state, "actions": actions}
 
@@ -272,19 +301,44 @@ def report(body: ReportIn, user: dict = Depends(require_consent)):
         raise HTTPException(503, "report storage not configured")
     spend(user["sub"], "report")
 
-    exp = catalog.EXPERIMENTS[sess["experiment"]]
     lang = sess["lang"]
     es = lang == "es"
+    if sess["experiment"] in catalog.EXPERIMENTS:
+        title = catalog.EXPERIMENTS[sess["experiment"]].title[lang]
+    else:
+        title = (sess["description"] or ("Experimento libre" if es else "Free experiment"))[:80]
     error_text = f"{res['error_pct']:.2f} %" if res["error_pct"] is not None else "—"
     ref_text = f"{res['ref_value']:.2f}" if res["ref_value"] is not None else "—"
-    figures = [
-        {"path": str(p), "caption": p.stem} for p in sorted((settings.plots_dir / sess["id"]).glob("*.png"))
-    ]
+
     report_id = uuid.uuid4().hex
+    plot_dir = settings.plots_dir / report_id
+    series = json.loads(res["series"] or "null")
+    figures = []
+    if series:
+        from .reports import plot_series
+
+        figures = [{"path": str(p), "caption": p.stem} for p in plot_series(series, plot_dir, res["key_name"])]
+
+    analysis = (
+        f"Se midió la posición del objeto con SAM 3.1 en cada frame y se ajustó x(t) con un polinomio de grado 2. "
+        f"Resultado: {res['key_name']} = {res['key_value']:.3f} m/s², R² = {res['r2']:.4f}."
+        if es
+        else
+        f"The object position was measured with SAM 3.1 in each frame and x(t) was fitted with a degree-2 polynomial. "
+        f"Result: {res['key_name']} = {res['key_value']:.3f} m/s², R² = {res['r2']:.4f}."
+    )
+    conclusion = ""
+    if res["error_pct"] is not None:
+        conclusion = (
+            f"El error frente a la referencia fue de {res['error_pct']:.2f} %."
+            if es
+            else f"The error against the reference was {res['error_pct']:.2f} %."
+        )
+
     context = {
         "session_id": sess["id"],
         "lang_babel": "spanish" if es else "english",
-        "title": exp.title[lang],
+        "title": title,
         "author": user.get("name") or user["sub"],
         "date": sess["created_at"][:10],
         "labels": {
@@ -301,7 +355,7 @@ def report(body: ReportIn, user: dict = Depends(require_consent)):
             "figures": "Figuras" if es else "Figures",
             "conclusion": "Conclusión" if es else "Conclusion",
         },
-        "objective": exp.title[lang],
+        "objective": sess["description"] or title,
         "hypothesis": "",
         "materials": [],
         "procedure": [],
@@ -310,21 +364,19 @@ def report(body: ReportIn, user: dict = Depends(require_consent)):
         "ref_text": ref_text,
         "error_text": error_text,
         "r2": res["r2"],
-        "analysis": "",
+        "analysis": analysis,
         "equation": r"x(t)=x_0+v_0t+\tfrac{1}{2}at^2",
         "figures": figures,
-        "conclusion": "",
+        "conclusion": conclusion,
     }
 
-    acquire_heavy()
+    pdf = reports.build_pdf(context, settings.reports_dir)
     try:
-        pdf = reports.build_pdf(context, settings.reports_dir)
-        try:
-            url = blob.upload_private_pdf(f"reports/{report_id}.pdf", pdf.read_bytes())
-        finally:
-            pdf.unlink(missing_ok=True)
+        url = blob.upload_private_pdf(f"reports/{report_id}.pdf", pdf.read_bytes())
     finally:
-        release_heavy()
+        pdf.unlink(missing_ok=True)
+        for p in plot_dir.glob("*.png"):
+            p.unlink(missing_ok=True)
 
     with connect() as conn:
         conn.execute(
@@ -435,7 +487,10 @@ def get_session(session_id: str, user: dict = Depends(require_consent)):
         "id": sess["id"],
         "state": sess["state"],
         "experiment": sess["experiment"],
+        "object_prompt": sess["object_prompt"],
+        "description": sess["description"],
         "lang": sess["lang"],
         "px_per_m": sess["px_per_m"],
+        "run_state": sess["run_state"],
         "result": result,
     }

@@ -3,16 +3,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Plot } from "@/components/plot";
 import { HoldToTalk } from "@/components/hold-to-talk";
+import { Plot } from "@/components/plot";
 import { api, apiBlob, errorKey } from "@/lib/api";
 import { captureFrame, openCamera, stopStream } from "@/lib/camera";
-import { experimentUi, isExperimentId, type ExperimentId } from "@/lib/catalog-ui";
+import { customSteps, experimentUi, isExperimentId, type ExperimentId } from "@/lib/catalog-ui";
 import { t, type Dict, type Lang } from "@/lib/i18n";
 import { speak } from "@/lib/speech";
 import { useCountUp } from "@/lib/use-count-up";
 
-type Phase = "setup" | "calibrate" | "record" | "processing" | "results";
+type Phase = "chat" | "setup" | "calibrate" | "run" | "results";
 type Series = { t: number[]; x: number[]; v: number[]; a: number[] };
 type Result = {
   key_name: "a" | "g";
@@ -22,49 +22,57 @@ type Result = {
   r2: number;
   series?: Series;
 };
+type RunReply = { state: string; detected: boolean; x_m: number | null; event: string | null; result: Result | null };
 type Session = {
   id: string;
   state: string;
   experiment: string | null;
+  object_prompt: string | null;
+  description: string | null;
   lang: Lang;
   px_per_m: number | null;
+  run_state: string;
   result?: Result | null;
 };
 type Live = { say: string; show: string; done: boolean };
-type Frame = { dataUrl: string; width: number; height: number };
+type Frame = { dataUrl: string; base64: string; width: number; height: number };
 type Tap = { x: number; y: number };
+type Msg = { role: "user" | "assistant"; text: string };
 
-const CLIP_MS = 10_000;
-const FRAME_MS = 2_000;
+const FRAME_MS = 200;
+const GUIDE_MS = 3000;
 
 export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
   const T = t(lang);
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
-  const [phase, setPhase] = useState<Phase>("setup");
+  const [phase, setPhase] = useState<Phase>("chat");
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState("");
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [draft, setDraft] = useState("");
   const [frame, setFrame] = useState<Frame | null>(null);
   const [taps, setTaps] = useState<Tap[]>([]);
   const [distance, setDistance] = useState("");
   const [theta, setTheta] = useState("");
-  const [live, setLive] = useState<Live | null>(null);
-  const [recording, setRecording] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
+  const [runActive, setRunActive] = useState(false);
+  const [runState, setRunState] = useState<string>("idle");
+  const [detected, setDetected] = useState(true);
+  const [livePts, setLivePts] = useState<{ t: number; x: number }[]>([]);
+  const [guide, setGuide] = useState<Live | null>(null);
 
   const streamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const stopTimerRef = useRef<number | null>(null);
-  const tickRef = useRef<number | null>(null);
-  const liveBusy = useRef(false);
+  const runStartRef = useRef(0);
+  const inflight = useRef(0);
+  const stoppingRef = useRef(false);
   const lastSay = useRef("");
 
   const experiment: ExperimentId | null =
     session?.experiment && isExperimentId(session.experiment) ? session.experiment : null;
+  const isCustom = session?.experiment === "custom";
+  const countX = useCountUp(result ? result.key_value : null);
 
   useEffect(() => {
     (async () => {
@@ -79,8 +87,11 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
         if (s.state === "results" && s.result) {
           setResult(s.result);
           setPhase("results");
-        } else if (s.state === "record") {
-          setPhase("record");
+        } else if (!s.experiment) {
+          setPhase("chat");
+          setMessages([{ role: "assistant", text: T.freeIntro }]);
+        } else if (s.px_per_m !== null) {
+          setPhase("run");
         } else {
           setPhase("setup");
         }
@@ -88,16 +99,12 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
         setError(fail(e, T));
       }
     })();
-    return () => {
-      stopStream(streamRef.current);
-      if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
-      if (tickRef.current) window.clearInterval(tickRef.current);
-    };
+    return () => stopStream(streamRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   useEffect(() => {
-    const needCamera = phase === "record" || (phase === "calibrate" && !frame);
+    const needCamera = phase === "run" || (phase === "calibrate" && !frame);
     if (!needCamera) {
       stopStream(streamRef.current);
       streamRef.current = null;
@@ -124,42 +131,133 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
   }, [phase, frame]);
 
   useEffect(() => {
-    if (phase !== "record" || recording) return;
+    if (!runActive || phase !== "run") return;
+    const id = window.setInterval(() => void sendFrame(), FRAME_MS);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runActive, phase]);
+
+  useEffect(() => {
+    if (!runActive || phase !== "run" || runState !== "waiting") return;
     const id = window.setInterval(async () => {
       const video = videoRef.current;
-      if (!video || video.videoWidth === 0 || liveBusy.current) return;
-      liveBusy.current = true;
+      if (!video || video.videoWidth === 0) return;
       try {
         const f = captureFrame(video, 640);
         const res = await api<Live>("/live", { json: { session_id: sessionId, frame: f.base64 } });
-        setLive(res);
+        setGuide(res);
         if (res.say && res.say !== lastSay.current) {
           lastSay.current = res.say;
           speak(res.say, lang);
         }
       } catch {
-        // Una revisión fallida no interrumpe la toma; se reintenta en el siguiente ciclo.
-      } finally {
-        liveBusy.current = false;
+        // La guía es opcional; si falla, la medición sigue.
       }
-    }, FRAME_MS);
+    }, GUIDE_MS);
     return () => window.clearInterval(id);
-  }, [phase, recording, sessionId, lang]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runActive, phase, runState, sessionId, lang]);
 
-  const countValue = useCountUp(phase === "results" && result ? result.key_value : null);
+  async function sendFrame() {
+    const video = videoRef.current;
+    if (!video || video.videoWidth === 0 || inflight.current >= 2 || stoppingRef.current) return;
+    inflight.current += 1;
+    try {
+      const f = captureFrame(video, 640);
+      const t = Number(((performance.now() - runStartRef.current) / 1000).toFixed(3));
+      const r = await api<RunReply>("/run/frame", {
+        json: { session_id: sessionId, t, height: f.height, frame: f.base64 },
+      });
+      onReply(r, t);
+    } catch (e) {
+      setError(fail(e, T));
+    } finally {
+      inflight.current -= 1;
+    }
+  }
 
-  async function askAssistant(text: string) {
+  function onReply(r: RunReply, t: number) {
+    setRunState(r.state);
+    setDetected(r.detected);
+    if (r.state === "measuring" && r.x_m !== null) {
+      const x = r.x_m;
+      setLivePts((prev) => [...prev, { t, x }]);
+    }
+    if (r.event === "moving") speak(T.eventMoving, lang);
+    if (r.event === "left_frame") speak(T.eventLeft, lang);
+    if (r.event === "timeout") speak(T.eventTimeout, lang);
+    if (r.event === "too_few") {
+      setError(T.errTooFew);
+      setRunActive(false);
+      setRunState("idle");
+    }
+    if (r.result) finishRun(r.result);
+  }
+
+  function finishRun(res: Result) {
+    setRunActive(false);
+    setRunState("idle");
+    setResult(res);
+    setPhase("results");
+    speak(T.resultSpoken(res.key_name, res.key_value.toFixed(2)), lang);
+  }
+
+  async function startRun() {
     setBusy(true);
     setError(null);
     try {
-      const res = await api<{ say: string; actions: { type: string; id: string }[] }>("/agent", {
-        json: { session_id: sessionId, text },
+      await api("/run/start", { json: { session_id: sessionId } });
+      runStartRef.current = performance.now();
+      setLivePts([]);
+      setGuide(null);
+      lastSay.current = "";
+      setRunState("waiting");
+      setRunActive(true);
+      speak(T.runWaiting, lang);
+    } catch (e) {
+      setError(fail(e, T));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function stopRun() {
+    stoppingRef.current = true;
+    setBusy(true);
+    try {
+      const r = await api<RunReply>("/run/stop", { json: { session_id: sessionId } });
+      setRunActive(false);
+      if (r.result) finishRun(r.result);
+      else setRunState("idle");
+    } catch (e) {
+      setError(fail(e, T));
+      setRunActive(false);
+    } finally {
+      stoppingRef.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function refreshSession() {
+    const s = await api<Session>(`/sessions/${sessionId}`);
+    setSession(s);
+    return s;
+  }
+
+  async function sendChat(text: string) {
+    const clean = text.trim();
+    if (!clean) return;
+    setBusy(true);
+    setError(null);
+    setMessages((prev) => [...prev, { role: "user", text: clean }]);
+    setDraft("");
+    try {
+      const res = await api<{ say: string; actions: unknown[] }>("/agent", {
+        json: { session_id: sessionId, text: clean },
       });
-      setNote(res.say);
+      setMessages((prev) => [...prev, { role: "assistant", text: res.say }]);
       speak(res.say, lang);
-      if (res.actions.length) {
-        setSession(await api<Session>(`/sessions/${sessionId}`));
-      }
+      await refreshSession();
     } catch (e) {
       setError(fail(e, T));
     } finally {
@@ -188,63 +286,11 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
           distance_m: d,
         },
       });
+      await refreshSession();
       speak(T.calibrateSpoken, lang);
-      setPhase("record");
+      setPhase("run");
     } catch (e) {
       setError(fail(e, T));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function startRecording() {
-    const stream = streamRef.current;
-    if (!stream || recording) return;
-    const mime = pickMime();
-    const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
-    chunksRef.current = [];
-    recorder.ondataavailable = (e) => {
-      if (e.data.size) chunksRef.current.push(e.data);
-    };
-    recorder.onstop = () => {
-      const type = recorder.mimeType || mime || "video/webm";
-      const blob = new Blob(chunksRef.current, { type });
-      if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
-      if (tickRef.current) window.clearInterval(tickRef.current);
-      setRecording(false);
-      setPhase("processing");
-      void measure(blob, type);
-    };
-    recorder.start();
-    recorderRef.current = recorder;
-    setRecording(true);
-    setElapsed(0);
-    tickRef.current = window.setInterval(() => setElapsed((s) => s + 1), 1000);
-    stopTimerRef.current = window.setTimeout(stopRecording, CLIP_MS);
-  }
-
-  function stopRecording() {
-    const rec = recorderRef.current;
-    if (rec && rec.state !== "inactive") rec.stop();
-  }
-
-  async function measure(blob: Blob, type: string) {
-    setBusy(true);
-    setError(null);
-    speak(T.processingSpoken, lang);
-    const form = new FormData();
-    form.append("session_id", sessionId);
-    form.append("video", new File([blob], `clip.${type.includes("mp4") ? "mp4" : "webm"}`, { type }));
-    if (theta.trim()) form.append("theta_deg", theta.trim());
-    try {
-      const res = await api<Result>("/measure", { form });
-      setResult(res);
-      setPhase("results");
-      const label = res.key_name === "a" ? "a" : "g";
-      speak(T.resultSpoken(label, res.key_value.toFixed(2)), lang);
-    } catch (e) {
-      setError(fail(e, T));
-      setPhase("record");
     } finally {
       setBusy(false);
     }
@@ -278,7 +324,17 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
   }
 
   const ui = experiment ? experimentUi(experiment, lang) : null;
+  const title = ui?.title ?? (session.description || T.modeFree);
   const unit = "m/s²";
+  const lastX = livePts.length ? livePts[livePts.length - 1].x : null;
+  const status =
+    runState === "waiting"
+      ? T.runWaiting
+      : runState === "measuring"
+        ? detected
+          ? T.runMeasuring
+          : T.runNotDetected
+        : null;
 
   return (
     <div className="lab">
@@ -286,7 +342,7 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
         <Link href="/start" className="link-button">
           {T.back}
         </Link>
-        <span className="lab-title">{ui?.title ?? T.startTitle}</span>
+        <span className="lab-title">{title}</span>
       </header>
 
       {error && (
@@ -295,27 +351,74 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
         </p>
       )}
 
-      {phase === "setup" && ui && (
+      {phase === "chat" && (
+        <section className="panel chat">
+          <h1>{T.modeFree}</h1>
+          <ol className="thread" aria-live="polite">
+            {messages.map((m, i) => (
+              <li key={i} className={`bubble ${m.role}`}>
+                <span className="who">{m.role === "user" ? T.chatYou : T.chatAssistant}</span>
+                <span>{m.text}</span>
+              </li>
+            ))}
+          </ol>
+          {session.experiment ? (
+            <div className="ready">
+              <p>{T.freeReady}</p>
+              {isCustom && session.description && <p className="fine">{session.description}</p>}
+              <button type="button" className="btn btn-signal wide" onClick={() => setPhase("setup")}>
+                {T.continueSetup}
+              </button>
+            </div>
+          ) : (
+            <>
+              <label className="field">
+                <span className="sr-only">{T.chatPlaceholder}</span>
+                <textarea
+                  rows={2}
+                  value={draft}
+                  placeholder={T.chatPlaceholder}
+                  onChange={(e) => setDraft(e.target.value)}
+                />
+              </label>
+              <div className="row">
+                <HoldToTalk
+                  lang={lang}
+                  label={T.askAssistant}
+                  onTranscript={(v) => void sendChat(v)}
+                  onError={setError}
+                />
+                <button type="button" className="btn btn-signal" disabled={busy || !draft.trim()} onClick={() => sendChat(draft)}>
+                  {T.chatSend}
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
+      {phase === "setup" && (
         <section className="panel">
           <h1>{T.setupTitle}</h1>
-          <p className="lede">{ui.summary}</p>
+          {ui && <p className="lede">{ui.summary}</p>}
+          {isCustom && session.description && <p className="lede">{session.description}</p>}
+          {isCustom && session.object_prompt && (
+            <p className="fine">
+              {T.objectLabel}: {session.object_prompt}
+            </p>
+          )}
           <h2 className="sub">{T.materials}</h2>
           <ul className="materials">
-            {ui.materials.map((m) => (
+            {(ui ? ui.materials : []).map((m) => (
               <li key={m}>{m}</li>
             ))}
           </ul>
           <h2 className="sub">{T.steps}</h2>
           <ol className="steps">
-            {ui.steps.map((s) => (
+            {(ui ? ui.steps : customSteps(lang)).map((s) => (
               <li key={s}>{s}</li>
             ))}
           </ol>
-          <h2 className="sub">{T.assistantTitle}</h2>
-          <div className="row">
-            <HoldToTalk lang={lang} label={T.askAssistant} onTranscript={askAssistant} onError={setError} />
-          </div>
-          {note && <p className="assistant-note">{note}</p>}
           <button type="button" className="btn btn-signal wide" onClick={() => setPhase("calibrate")} disabled={busy}>
             {T.imReady}
           </button>
@@ -360,12 +463,7 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
               </p>
               <label className="field">
                 <span>{T.distanceLabel}</span>
-                <input
-                  inputMode="decimal"
-                  value={distance}
-                  onChange={(e) => setDistance(e.target.value)}
-                  placeholder="0,50"
-                />
+                <input inputMode="decimal" value={distance} onChange={(e) => setDistance(e.target.value)} placeholder="0,50" />
               </label>
               {experiment === "mrua_ramp" && (
                 <label className="field">
@@ -394,43 +492,43 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
         </section>
       )}
 
-      {phase === "record" && (
+      {phase === "run" && (
         <section className="panel">
-          <h1>{T.recordTitle}</h1>
+          <h1>{T.runTitle}</h1>
           <div className="stage live">
-            <video ref={videoRef} autoPlay playsInline muted aria-label={T.recordTitle} />
-            {recording && <span className="rec-dot" aria-label={T.recordTimer(elapsed)} />}
-            {live && (
+            <video ref={videoRef} autoPlay playsInline muted aria-label={T.runTitle} />
+            {runActive && <span className="rec-dot" aria-hidden="true" />}
+            {(status || guide) && (
               <div className="live-caption" aria-live="polite">
                 <span className="live-label">{T.liveNow}</span>
-                <span>{live.say || live.show}</span>
+                <span>{status ?? guide?.say}</span>
               </div>
             )}
           </div>
-          <p className="fine">{recording ? T.recordTimer(elapsed) : T.recordHint}</p>
+          <p className="readout-line">
+            <span className="readout">x = {lastX !== null ? `${lastX.toFixed(3)} m` : "—"}</span>
+          </p>
+          {livePts.length >= 2 ? (
+            <Plot t={livePts.map((p) => p.t)} y={livePts.map((p) => p.x)} label={T.runLive} unit="m" />
+          ) : (
+            <p className="fine">{T.runLiveEmpty}</p>
+          )}
           <div className="record-controls">
-            {recording ? (
-              <button type="button" className="btn stop" onClick={stopRecording}>
-                {T.recordStop}
+            {runActive ? (
+              <button type="button" className="btn stop" onClick={stopRun} disabled={busy}>
+                {T.runStop}
               </button>
             ) : (
-              <button type="button" className="btn record" onClick={startRecording} disabled={busy}>
-                {T.recordStart}
+              <button type="button" className="btn record" onClick={startRun} disabled={busy}>
+                {T.runStart}
               </button>
             )}
           </div>
-          {!recording && (
+          {!runActive && (
             <button type="button" className="btn ghost wide" onClick={() => { setFrame(null); setTaps([]); setPhase("calibrate"); }}>
               {T.recalibrate}
             </button>
           )}
-        </section>
-      )}
-
-      {phase === "processing" && (
-        <section className="panel processing" aria-live="polite">
-          <span className="spinner" aria-hidden="true" />
-          <p>{T.processing}</p>
         </section>
       )}
 
@@ -439,7 +537,7 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
           <h1>{T.resultTitle}</h1>
           <div className="readout-block">
             <span className="readout big" aria-live="polite">
-              {result.key_name} = {countValue !== null ? countValue.toFixed(3) : "—"}
+              {result.key_name} = {countX !== null ? countX.toFixed(3) : "—"}
             </span>
             <span className="unit">{unit}</span>
           </div>
@@ -473,12 +571,11 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
               className="btn ghost"
               onClick={() => {
                 setResult(null);
-                setLive(null);
-                lastSay.current = "";
-                setPhase("record");
+                setLivePts([]);
+                setPhase("run");
               }}
             >
-              {T.anotherRun}
+              {T.runAgain}
             </button>
             <button type="button" className="btn ghost" onClick={() => router.push("/start")}>
               {T.newExperiment}
@@ -488,14 +585,6 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
       )}
     </div>
   );
-}
-
-function pickMime(): string | undefined {
-  if (typeof MediaRecorder === "undefined") return undefined;
-  for (const m of ["video/mp4", "video/webm;codecs=vp8", "video/webm"]) {
-    if (MediaRecorder.isTypeSupported(m)) return m;
-  }
-  return undefined;
 }
 
 function fail(e: unknown, T: Dict): string {

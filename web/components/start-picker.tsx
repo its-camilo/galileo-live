@@ -34,6 +34,18 @@ export function StartPicker({ lang }: { lang: Lang }) {
     }
   }
 
+  async function openFree() {
+    setBusy(true);
+    setError(null);
+    try {
+      const s = await api<{ id: string }>("/sessions", { json: { lang } });
+      router.push(`/lab/${s.id}`);
+    } catch (e) {
+      setError(T[`err${cap(errorKey(e))}` as "errGeneric"] ?? T.errGeneric);
+      setBusy(false);
+    }
+  }
+
   async function describe() {
     if (!text.trim()) return;
     setBusy(true);
@@ -43,7 +55,7 @@ export function StartPicker({ lang }: { lang: Lang }) {
       const agent = await api<{ actions: { type: string; id: string }[] }>("/agent", {
         json: { session_id: s.id, text },
       });
-      if (agent.actions.some((a) => a.type === "experiment")) {
+      if (agent.actions.length > 0) {
         router.push(`/lab/${s.id}`);
       } else {
         setError(T.describeNotFound);
@@ -63,6 +75,13 @@ export function StartPicker({ lang }: { lang: Lang }) {
       </header>
 
       <section className="cards" aria-label={T.startTitle}>
+        <article className="card free">
+          <h2>{T.modeFree}</h2>
+          <p>{T.modeFreeBody}</p>
+          <button type="button" className="btn btn-signal" disabled={busy} onClick={openFree}>
+            {T.chooseExperiment}
+          </button>
+        </article>
         {EXPERIMENT_IDS.map((id) => {
           const ui = experimentUi(id, lang);
           return (

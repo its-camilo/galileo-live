@@ -64,3 +64,19 @@ export const EXPERIMENT_IDS: ExperimentId[] = ["mrua_ramp", "free_fall"];
 export function isExperimentId(value: string | null): value is ExperimentId {
   return value === "mrua_ramp" || value === "free_fall";
 }
+
+export function customSteps(lang: Lang): string[] {
+  return lang === "es"
+    ? [
+        "Coloca el objeto sobre una trayectoria recta, a la vista de la cámara.",
+        "Pon una regla o cinta métrica a lo largo de la trayectoria.",
+        "Fija el celular sin moverlo durante la medición.",
+        "Suelta o impulsa el objeto según lo que quieras medir.",
+      ]
+    : [
+        "Place the object on a straight path, in view of the camera.",
+        "Lay a ruler or tape measure along the path.",
+        "Fix the phone and keep it still during the measurement.",
+        "Release or push the object, depending on what you want to measure.",
+      ];
+}
