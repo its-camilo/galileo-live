@@ -102,7 +102,7 @@ Los secretos viven en `/data/galileo-live/.env` (permisos 600) y no se versionan
 ## Pendiente
 
 - Credenciales en Vercel: `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET`, `APP_JWT_SECRET`, `NEXT_PUBLIC_API_URL`.
-- Exponer la API con Tailscale Funnel (decidir puerto/ruta; `8443` hoy apunta a otro servicio).
+- API pública: `https://vps-oracle-01.tailfb0395.ts.net:10000` (Tailscale Funnel en el puerto 10000; el dashboard de Hermes sigue en `http://vps-oracle-01` por el puerto 80, solo tailnet).
 - Decodificar máscaras de SAM para calibración automática con regla y para centroide por máscara.
 - Validar con un clip real los formatos de SAM y Voice Transcribe (solo probados con la documentación).
 - Textos del informe (hipótesis, procedimiento, análisis, conclusión) con Muse Spark y diagrama con Muse Image.
