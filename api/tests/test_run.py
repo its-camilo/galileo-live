@@ -108,7 +108,7 @@ def test_run_frame_endpoint_with_fake_sam(db, monkeypatch):
     monkeypatch.setenv("APP_JWT_SECRET", "k" * 40)
     config.get_settings.cache_clear()
     with connect() as c:
-        c.execute("UPDATE users SET consent_version = ? WHERE id = 'u'", ("2026-11-02",))
+        c.execute("UPDATE users SET consent_version = ? WHERE id = 'u'", ("2026-11-03",))
 
     class FakeSam:
         def sam_image_boxes(self, b64, concept):
@@ -131,3 +131,50 @@ def test_run_frame_endpoint_with_fake_sam(db, monkeypatch):
             row = c.execute("SELECT cx, cy FROM points WHERE session_id = 's'").fetchone()
         assert row["cx"] == pytest.approx(220.0) and row["cy"] == pytest.approx(220.0)
         assert client.post("/run/stop", json={"session_id": "s"}, headers=h).json()["state"] == "idle"
+
+
+def test_report_facts_have_no_personal_or_free_text(db):
+    from app import routes
+    from app.db import connect
+    with connect() as c:
+        c.execute("UPDATE sessions SET description = 'Juan Pérez, juan@correo.com', object_prompt = 'my nephew' WHERE id = 's'")
+        sess = c.execute("SELECT * FROM sessions WHERE id = 's'").fetchone()
+    res = {"key_name": "a", "key_value": 0.41234, "ref_value": 0.4, "error_pct": 3.085, "r2": 0.99912}
+    facts = routes.report_facts(sess, res)
+    assert set(facts) == set(routes.ALLOWED_REPORT_FACTS)
+    flat = repr(facts)
+    assert "Juan" not in flat and "correo" not in flat and "nephew" not in flat
+    assert facts["key_value"] == 0.412 and facts["kind"] == "mrua_ramp"
+
+
+def test_contributor_text_only_when_training_consented(db, monkeypatch):
+    from app import routes
+    from app.db import connect
+    calls = []
+
+    class Fake:
+        def chat(self, messages, **kw):
+            calls.append(kw)
+            return {"choices": [{"message": {"content": '{"analysis": "a ok", "conclusion": "c ok"}'}}]}
+
+    monkeypatch.setattr(routes, "_meta", lambda: Fake())
+    with connect() as c:
+        c.execute("UPDATE users SET consent_scope = ? WHERE id = 'u'", ('{"training_report": false}',))
+    assert routes._trains_on_report("u") is False
+    with connect() as c:
+        c.execute("UPDATE users SET consent_scope = ? WHERE id = 'u'", ('{"training_report": true}',))
+    assert routes._trains_on_report("u") is True
+    out = routes._contributor_text({"kind": "free_fall", "key_value": 9.8}, "es")
+    assert out == {"analysis": "a ok", "conclusion": "c ok"}
+    assert calls[-1]["model"] == "muse-spark-1.3-contributor"
+
+
+def test_contributor_failure_returns_none(db, monkeypatch):
+    from app import routes
+
+    class Broken:
+        def chat(self, messages, **kw):
+            return {"choices": [{"message": {"content": "not json"}}]}
+
+    monkeypatch.setattr(routes, "_meta", lambda: Broken())
+    assert routes._contributor_text({"kind": "free"}, "en") is None

@@ -18,6 +18,7 @@ export function ConsentForm({ lang }: { lang: Lang }) {
     meta_processing: false,
     international_transfer: false,
   });
+  const [training, setTraining] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const labels: Record<(typeof KEYS)[number], string> = {
@@ -33,7 +34,7 @@ export function ConsentForm({ lang }: { lang: Lang }) {
     setError(null);
     try {
       await api("/consent", {
-        json: { version: LEGAL.consentVersion, ...checked },
+        json: { version: LEGAL.consentVersion, ...checked, training_report: training },
       });
       router.replace("/start");
     } catch (e) {
@@ -59,6 +60,14 @@ export function ConsentForm({ lang }: { lang: Lang }) {
             </label>
           </li>
         ))}
+      </ul>
+      <ul className="checks optional">
+        <li>
+          <label>
+            <input type="checkbox" checked={training} onChange={(e) => setTraining(e.target.checked)} />
+            <span>{T.consentTrainingReport}</span>
+          </label>
+        </li>
       </ul>
       <p className="fine">
         <Link href="/privacy">{T.consentRead}</Link>

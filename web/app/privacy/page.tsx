@@ -68,7 +68,7 @@ export default function PrivacyPage() {
         <li>
           <strong>Meta Platforms (Meta Model API):</strong> procesa los fotogramas, el audio y el texto para generar las
           respuestas del asistente, el reconocimiento de voz y la detección del objeto en cada imagen. Usamos el nivel
-          Standard del servicio. Según sus términos, en este nivel Meta actúa como procesador y no usa ese contenido para
+          Standard del servicio. La única excepción es el texto del informe descrito en el punto 6 bis, y solo si lo autorizas. Según sus términos, en este nivel Meta actúa como procesador y no usa ese contenido para
           entrenar sus modelos. Meta puede usar datos técnicos de uso (metadatos de las peticiones, tiempos, errores y
           conteo de tokens) para mejorar sus servicios, y puede conservar el contenido el tiempo que necesite para
           prestar el servicio, cumplir la ley o revisar violaciones de sus políticas.
@@ -86,6 +86,19 @@ export default function PrivacyPage() {
       <p>
         Estos proveedores están en Estados Unidos y en otros países. Esto implica una transferencia internacional de
         datos, que autorizas expresamente al aceptar el consentimiento.
+      </p>
+
+      <h2>6 bis. Texto del informe con Meta en modo Contributor (opcional)</h2>
+      <p>
+        Solo si lo autorizas expresamente en el consentimiento, el texto de análisis y conclusión del informe PDF se genera
+        con <strong>Muse Spark en modo Contributor</strong>. A Meta solo se envían los números del experimento (valor
+        obtenido, referencia, error, R², ángulo de la rampa si lo indicaste) y el tipo de experimento del catálogo. No se
+        envían tu nombre, tu correo, tu descripción libre, el objeto que seguiste ni imágenes.
+      </p>
+      <p>
+        <strong>En modo Contributor, Meta puede usar ese texto para entrenar y mejorar sus modelos</strong>, y no ofrece una
+        opción para excluirlo. Si no lo autorizas, el informe usa un texto fijo y no se llama a Meta para ello. Puedes
+        decidirlo al aceptar el consentimiento.
       </p>
 
       <h2>7. Conservación y eliminación</h2>

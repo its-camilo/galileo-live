@@ -35,7 +35,7 @@ def auth(tok: str) -> dict:
     return {"Authorization": f"Bearer {tok}"}
 
 
-CONSENT = {"version": "2026-11-02", "age_confirmed": True, "data_processing": True,
+CONSENT = {"version": "2026-11-03", "age_confirmed": True, "data_processing": True,
            "meta_processing": True, "international_transfer": True}
 
 

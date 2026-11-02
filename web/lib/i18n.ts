@@ -104,6 +104,8 @@ const es = {
   resultSpoken: (label: string, value: string) => `Resultado: ${label} igual a ${value} metros por segundo al cuadrado.`,
   calibrateSpoken: "Escala lista. Ya puedes grabar.",
   noSpeechHeard: "No te escuché bien. Intenta de nuevo.",
+  consentTrainingReport:
+    "Opcional: autorizo que Meta use el texto de mi informe, generado solo con los números del experimento y sin mi nombre ni mis datos, para entrenar sus modelos. Si no lo acepto, el informe usa un texto fijo.",
   modeFree: "Modo libre",
   modeFreeBody: "Cuéntale al asistente qué quieres medir. Te guía hasta configurar la medición.",
   freeIntro: "Cuéntame qué quieres medir y con qué materiales cuentas.",
@@ -234,6 +236,8 @@ const en: Dict = {
   resultSpoken: (label: string, value: string) => `Result: ${label} equals ${value} meters per second squared.`,
   calibrateSpoken: "Scale ready. You can record now.",
   noSpeechHeard: "I didn't catch that. Try again.",
+  consentTrainingReport:
+    "Optional: I authorize Meta to use my report text, generated only from the experiment numbers and without my name or data, to train its models. If I decline, the report uses fixed text.",
   modeFree: "Free mode",
   modeFreeBody: "Tell the assistant what you want to measure. It guides you until the setup is ready.",
   freeIntro: "Tell me what you want to measure and what materials you have.",

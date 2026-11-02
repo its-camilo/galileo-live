@@ -335,6 +335,11 @@ def report(body: ReportIn, user: dict = Depends(require_consent)):
             else f"The error against the reference was {res['error_pct']:.2f} %."
         )
 
+    if _trains_on_report(user["sub"]):
+        ai_text = _contributor_text(report_facts(sess, res), lang)
+        if ai_text:
+            analysis, conclusion = ai_text["analysis"], ai_text["conclusion"]
+
     context = {
         "session_id": sess["id"],
         "lang_babel": "spanish" if es else "english",
@@ -432,6 +437,7 @@ class ConsentIn(BaseModel):
     data_processing: bool
     meta_processing: bool
     international_transfer: bool
+    training_report: bool = False
 
 
 @router.get("/me")
@@ -460,6 +466,7 @@ def consent(body: ConsentIn, user: dict = Depends(require_user)):
         "data_processing": True,
         "meta_processing": True,
         "international_transfer": True,
+        "training_report": body.training_report,
     })
     with connect() as conn:
         conn.execute(
@@ -494,3 +501,59 @@ def get_session(session_id: str, user: dict = Depends(require_consent)):
         "run_state": sess["run_state"],
         "result": result,
     }
+
+
+ALLOWED_REPORT_FACTS = ("kind", "key_name", "key_value", "ref_value", "error_pct", "r2", "theta_deg", "lang")
+
+
+def report_facts(sess, res) -> dict:
+    """Solo datos numéricos y del catálogo: sin nombre, correo, descripción ni objeto libre."""
+    kind = sess["experiment"] if sess["experiment"] in catalog.EXPERIMENTS else "free"
+    facts = {
+        "kind": kind,
+        "key_name": res["key_name"],
+        "key_value": round(res["key_value"], 3),
+        "ref_value": None if res["ref_value"] is None else round(res["ref_value"], 3),
+        "error_pct": None if res["error_pct"] is None else round(res["error_pct"], 2),
+        "r2": round(res["r2"], 4),
+        "theta_deg": sess["theta_deg"] if kind == "mrua_ramp" else None,
+        "lang": sess["lang"],
+    }
+    return {key: facts[key] for key in ALLOWED_REPORT_FACTS}
+
+
+def _trains_on_report(user_sub: str) -> bool:
+    with connect() as conn:
+        row = conn.execute("SELECT consent_scope FROM users WHERE id = ?", (user_sub,)).fetchone()
+    if row is None or not row["consent_scope"]:
+        return False
+    return bool(json.loads(row["consent_scope"]).get("training_report"))
+
+
+def _contributor_text(facts: dict, lang: str) -> dict | None:
+    settings = get_settings()
+    messages = [
+        {
+            "role": "developer",
+            "content": (
+                "You write a short analysis and conclusion for a physics lab report. "
+                "Use ONLY the numbers in the JSON. Never invent values, never mention people. "
+                f"Write in {'Spanish' if lang == 'es' else 'English'}, two short paragraphs at most. "
+                'Reply ONLY with JSON: {"analysis": "...", "conclusion": "..."}.'
+            ),
+        },
+        {"role": "user", "content": json.dumps(facts)},
+    ]
+    try:
+        reply = _meta().chat(messages, reasoning_effort="low", model=settings.meta_contributor_model)
+        content = reply["choices"][0]["message"].get("content") or ""
+        match = re.search(r"\{.*\}", content, re.S)
+        parsed = json.loads(match.group(0)) if match else {}
+    except (MetaNotConfigured, HTTPException, ValueError, KeyError, IndexError):
+        return None
+    analysis, conclusion = parsed.get("analysis"), parsed.get("conclusion")
+    if not isinstance(analysis, str) or not isinstance(conclusion, str):
+        return None
+    if len(analysis) > 1200 or len(conclusion) > 800:
+        return None
+    return {"analysis": analysis, "conclusion": conclusion}

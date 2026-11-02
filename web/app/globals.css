@@ -936,3 +936,9 @@ textarea {
   font-size: 22px;
   color: var(--trace);
 }
+
+.checks.optional {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}

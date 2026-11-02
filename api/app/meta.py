@@ -50,8 +50,14 @@ class MetaClient:
         self._model = settings.meta_chat_model or DEFAULT_CHAT_MODEL
         self._auth = {"Authorization": f"Bearer {settings.meta_api_key}"}
 
-    def chat(self, messages: list[dict], tools: list[dict] | None = None, reasoning_effort: str = "low") -> dict:
-        body: dict = {"model": self._model, "messages": messages, "reasoning_effort": reasoning_effort}
+    def chat(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        reasoning_effort: str = "low",
+        model: str | None = None,
+    ) -> dict:
+        body: dict = {"model": model or self._model, "messages": messages, "reasoning_effort": reasoning_effort}
         if tools:
             body["tools"] = tools
         r = httpx.post(f"{self._base}/chat/completions", json=body, headers=self._auth, timeout=60)
