@@ -30,7 +30,7 @@ const es = {
     "Galileo Live usa tu cámara, tu micrófono y tu cuenta de Google para medir el experimento. Revisa cada autorización. Puedes leer la política de privacidad antes de aceptar.",
   consentAge: "Tengo 18 años o más, o tengo autorización de mi representante legal.",
   consentData:
-    "Autorizo el tratamiento de mi cuenta, datos del experimento, imágenes, voz y videos para las finalidades de la política de privacidad.",
+    "Autorizo el tratamiento de mi cuenta, los datos del experimento, las imágenes de la cámara, mi voz y el historial de conversación con el asistente, para las finalidades de la política de privacidad.",
   consentMeta:
     "Entiendo que el contenido se procesa con Meta Model API como encargado. Meta no lo usa para entrenar sus modelos en el nivel Standard, pero puede usar datos técnicos de uso.",
   consentTransfer:
@@ -160,7 +160,7 @@ const en: Dict = {
     "Galileo Live uses your camera, microphone and Google account to measure the experiment. Review each authorization. You can read the privacy policy before accepting.",
   consentAge: "I am 18 or older, or my legal guardian has authorized my use.",
   consentData:
-    "I authorize the processing of my account, experiment data, images, voice and videos for the purposes in the privacy policy.",
+    "I authorize the processing of my account, experiment data, camera images, my voice and my conversation history with the assistant, for the purposes in the privacy policy.",
   consentMeta:
     "I understand the content is processed by Meta Model API as a processor. Meta does not use it to train its models at the Standard tier, but may use technical usage data.",
   consentTransfer:

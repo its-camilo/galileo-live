@@ -25,12 +25,14 @@ export default function PrivacyPage() {
           datos de Google.
         </li>
         <li>
-          <strong>Datos del experimento:</strong> experimento elegido, idioma, valor de calibración y resultados de la
-          medición (por ejemplo aceleración, error y R²).
+          <strong>Datos del experimento:</strong> experimento elegido, objeto a seguir, idioma, valor de calibración,
+          posiciones medidas del objeto y resultados (por ejemplo aceleración, error y R²).
+          <strong> Historial de conversación:</strong> lo que escribes o dices al asistente en el modo libre se guarda
+          para continuar la configuración del experimento.
         </li>
         <li>
-          <strong>Imagen, voz y video:</strong> fotogramas de la cámara durante la guía en vivo, audio de voz y clips
-          cortos de hasta 10 segundos al grabar un experimento.
+          <strong>Imagen y voz:</strong> fotogramas de la cámara (unos 5 por segundo durante la medición y una imagen
+          cada 3 segundos durante la guía), y audio de voz cuando usas el micrófono.
         </li>
         <li>
           <strong>Informes:</strong> los PDF generados, que contienen tu nombre y los datos del experimento.
@@ -64,8 +66,8 @@ export default function PrivacyPage() {
       <h2>6. Encargados y transferencias internacionales</h2>
       <ul>
         <li>
-          <strong>Meta Platforms (Meta Model API):</strong> procesa los fotogramas, el audio, el video y el texto para
-          generar las respuestas del asistente, el reconocimiento de voz y la segmentación de objetos. Usamos el nivel
+          <strong>Meta Platforms (Meta Model API):</strong> procesa los fotogramas, el audio y el texto para generar las
+          respuestas del asistente, el reconocimiento de voz y la detección del objeto en cada imagen. Usamos el nivel
           Standard del servicio. Según sus términos, en este nivel Meta actúa como procesador y no usa ese contenido para
           entrenar sus modelos. Meta puede usar datos técnicos de uso (metadatos de las peticiones, tiempos, errores y
           conteo de tokens) para mejorar sus servicios, y puede conservar el contenido el tiempo que necesite para
@@ -88,8 +90,8 @@ export default function PrivacyPage() {
 
       <h2>7. Conservación y eliminación</h2>
       <ul>
-        <li>Los videos grabados se borran al terminar la medición.</li>
-        <li>Los fotogramas de la guía en vivo y el audio no se guardan en nuestro servidor después de procesarse.</li>
+        <li>No grabamos videos. Los fotogramas y el audio se procesan en tiempo real y no se guardan en nuestro servidor.</li>
+        <li>Las posiciones medidas y el historial de conversación se guardan con tu cuenta hasta que solicites su supresión.</li>
         <li>Tu cuenta, tu historial y tus informes se conservan hasta que solicites su supresión.</li>
         <li>Los proveedores pueden conservar datos según sus propias políticas, como se indicó en el punto 6.</li>
       </ul>

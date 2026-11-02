@@ -4,6 +4,6 @@ export const LEGAL = {
   owner: "Camilo Alejandro Lagos Malaver",
   country: "Colombia",
   contactEmail: "camiloalejandrolagosmalaver@gmail.com",
-  consentVersion: "2026-11-01",
-  updated: "1 de noviembre de 2026",
+  consentVersion: "2026-11-02",
+  updated: "2 de noviembre de 2026",
 };
