@@ -108,7 +108,7 @@ def test_run_frame_endpoint_with_fake_sam(db, monkeypatch):
     monkeypatch.setenv("APP_JWT_SECRET", "k" * 40)
     config.get_settings.cache_clear()
     with connect() as c:
-        c.execute("UPDATE users SET consent_version = ? WHERE id = 'u'", ("2026-11-01",))
+        c.execute("UPDATE users SET consent_version = ? WHERE id = 'u'", ("2026-11-02",))
 
     class FakeSam:
         def sam_image_boxes(self, b64, concept):
