@@ -56,8 +56,9 @@ Todos requieren `Authorization: Bearer <token>`, salvo `/health`.
 | POST | `/calibrate` | Listo con puntos + distancia; con frame (SAM) pendiente |
 | POST | `/measure` | Listo: normaliza, SAM, cálculo, guarda resultados, borra el video |
 | POST | `/agent` | Listo con herramienta `select_experiment`; resto pendiente |
-| POST | `/report` | Compila PDF con tectonic; subida a Vercel Blob pendiente |
-| GET | `/history` | Listo (desde SQLite) |
+| POST | `/report` | Listo: compila con tectonic y sube el PDF privado a Vercel Blob |
+| GET | `/reports/{id}/pdf` | Listo: descarga el PDF del usuario a través de la API (Blob es privado) |
+| GET | `/history` | Listo (desde SQLite; `pdf_url` apunta al endpoint anterior) |
 
 ## Correr en local
 
@@ -88,12 +89,23 @@ Copia `api/app` a `/data/galileo-live/app`, instala dependencias en `/data/galil
 reinicia el servicio de usuario `galileo-live-api` (escucha en `127.0.0.1:8443`).
 Los secretos viven en `/data/galileo-live/.env` (permisos 600) y no se versionan.
 
+## Seguridad
+
+- **Acceso:** solo tokens HS256 emitidos por la web (`iss=galileo-web`, `aud=galileo-vps`, vida máxima 10 min).
+- **Límites por IP** (ventana deslizante, detrás de Funnel se toma la última IP de `X-Forwarded-For`): global 120/min, y por endpoint (p. ej. `/measure` 5 cada 10 min, `/report` 5/hora).
+- **Cuotas diarias por usuario** (presupuesto de Meta): ver `DAILY_QUOTA` en `api/app/security.py`.
+- **Trabajos pesados** (`/measure`, `/report`) de a uno a la vez; si hay otro en curso responden 503.
+- **Host confiable** (`ALLOWED_HOSTS`), **CORS** solo para `galileo-live.vercel.app` y localhost, **docs de OpenAPI desactivadas**, cabeceras de seguridad, límite de 60 MB por petición, errores sin trazas.
+- **Servicio endurecido** con systemd (`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`), escucha solo en `127.0.0.1`.
+- **Privacidad:** los videos se borran al terminar la medición; los PDF viven en un Blob privado.
+
 ## Pendiente
 
-- Credenciales: `MODEL_API_KEY`, `BLOB_READ_WRITE_TOKEN`, `AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET`, `AUTH_SECRET`.
-- Exponer la API con Tailscale Funnel (puerto 8443).
+- Credenciales en Vercel: `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET`, `APP_JWT_SECRET`, `NEXT_PUBLIC_API_URL`.
+- Exponer la API con Tailscale Funnel (decidir puerto/ruta; `8443` hoy apunta a otro servicio).
 - Decodificar máscaras de SAM para calibración automática con regla y para centroide por máscara.
-- Subida a Vercel Blob (store privado) y URL firmada en `/history`.
+- Validar con un clip real los formatos de SAM y Voice Transcribe (solo probados con la documentación).
+- Textos del informe (hipótesis, procedimiento, análisis, conclusión) con Muse Spark y diagrama con Muse Image.
 - Diagrama del montaje con Muse Image y diagnóstico con Muse Spark en el informe.
 - UI de la PWA (cámara, grabación, push-to-talk, resultados). Actualmente solo hay login y token.
 - Stretch: péndulo, plano inclinado.

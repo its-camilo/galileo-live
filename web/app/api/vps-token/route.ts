@@ -18,6 +18,7 @@ export async function POST() {
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(email)
     .setAudience(process.env.APP_JWT_AUDIENCE ?? "galileo-vps")
+    .setIssuer("galileo-web")
     .setIssuedAt()
     .setExpirationTime("5m")
     .sign(new TextEncoder().encode(secret));

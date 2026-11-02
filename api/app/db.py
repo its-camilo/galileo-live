@@ -33,6 +33,13 @@ CREATE TABLE IF NOT EXISTS reports (
     blob_url TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS usage (
+    user_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    bucket TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day, bucket)
+);
 """
 
 

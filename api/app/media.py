@@ -11,6 +11,7 @@ class VideoInfo:
     width: int
     height: int
     fps: float
+    duration: float
 
 
 def normalize_video(src: Path, dst: Path) -> None:
@@ -33,7 +34,7 @@ def probe(path: Path) -> VideoInfo:
     out = subprocess.run(
         [
             "ffprobe", "-v", "error", "-select_streams", "v:0",
-            "-show_entries", "stream=width,height,avg_frame_rate",
+            "-show_entries", "stream=width,height,avg_frame_rate:format=duration",
             "-of", "json", str(path),
         ],
         check=True,
@@ -41,9 +42,16 @@ def probe(path: Path) -> VideoInfo:
         text=True,
         timeout=60,
     )
-    stream = json.loads(out.stdout)["streams"][0]
+    data = json.loads(out.stdout)
+    stream = data["streams"][0]
     num, den = stream["avg_frame_rate"].split("/")
     fps = float(num) / float(den) if float(den) else 0.0
     if fps <= 0:
         raise ValueError("could not determine video fps")
-    return VideoInfo(width=int(stream["width"]), height=int(stream["height"]), fps=fps)
+    duration = float(data.get("format", {}).get("duration", 0.0))
+    return VideoInfo(
+        width=int(stream["width"]),
+        height=int(stream["height"]),
+        fps=fps,
+        duration=duration,
+    )

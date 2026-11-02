@@ -1,18 +1,18 @@
-import base64
 import json
 import re
 import shutil
 import uuid
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from . import catalog, measure, media, reports
+from . import blob, catalog, measure, media, reports
 from .auth import require_user
 from .config import get_settings
 from .db import connect
 from .meta import MetaClient, MetaNotConfigured, parse_frames, track_centroids
+from .security import acquire_heavy, rate_limit, release_heavy, spend
 
 router = APIRouter()
 
@@ -68,7 +68,7 @@ class SessionIn(BaseModel):
     lang: str = Field("en", pattern="^(en|es)$")
 
 
-@router.post("/sessions")
+@router.post("/sessions", dependencies=[Depends(rate_limit("sessions"))])
 def create_session(body: SessionIn, user: dict = Depends(require_user)):
     if body.experiment and body.experiment not in catalog.EXPERIMENTS:
         raise HTTPException(400, "unknown experiment")
@@ -82,23 +82,28 @@ def create_session(body: SessionIn, user: dict = Depends(require_user)):
     return {"id": session_id, "state": state}
 
 
-@router.post("/stt")
+@router.post("/stt", dependencies=[Depends(rate_limit("stt"))])
 async def stt(
     audio: UploadFile = File(...),
-    lang_hint: str = Form("en"),
+    lang_hint: str = Form("en", pattern="^(en|es)$"),
     user: dict = Depends(require_user),
 ):
-    result = _meta().transcribe(await audio.read(), audio.filename or "audio.webm", lang_hint)
+    spend(user["sub"], "stt")
+    data = await audio.read(10 * 1024 * 1024 + 1)
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(413, "audio too large")
+    result = _meta().transcribe(data, audio.filename or "audio.webm", lang_hint)
     return {"text": result.get("text", ""), "lang": result.get("language", lang_hint)}
 
 
 class LiveIn(BaseModel):
-    session_id: str
-    frame: str  # base64 JPEG, ~640 px wide
+    session_id: str = Field(max_length=64)
+    frame: str = Field(max_length=2_000_000)  # base64 JPEG, ~640 px wide
 
 
-@router.post("/live")
+@router.post("/live", dependencies=[Depends(rate_limit("live"))])
 def live(body: LiveIn, user: dict = Depends(require_user)):
+    spend(user["sub"], "live")
     with connect() as conn:
         sess = _session(conn, body.session_id, user["sub"])
     messages = [
@@ -126,13 +131,13 @@ def live(body: LiveIn, user: dict = Depends(require_user)):
 
 
 class CalibrateIn(BaseModel):
-    session_id: str
+    session_id: str = Field(max_length=64)
     p1: tuple[float, float]
     p2: tuple[float, float]
-    distance_m: float = Field(gt=0)
+    distance_m: float = Field(gt=0, le=100)
 
 
-@router.post("/calibrate")
+@router.post("/calibrate", dependencies=[Depends(rate_limit("calibrate"))])
 def calibrate(body: CalibrateIn, user: dict = Depends(require_user)):
     with connect() as conn:
         sess = _session(conn, body.session_id, user["sub"])
@@ -147,11 +152,11 @@ def calibrate(body: CalibrateIn, user: dict = Depends(require_user)):
     return {"px_per_m": px_per_m}
 
 
-@router.post("/measure")
+@router.post("/measure", dependencies=[Depends(rate_limit("measure"))])
 async def measure_clip(
-    session_id: str = Form(...),
+    session_id: str = Form(..., max_length=64),
     video: UploadFile = File(...),
-    theta_deg: float | None = Form(None),
+    theta_deg: float | None = Form(None, ge=0, le=90),
     user: dict = Depends(require_user),
 ):
     settings = get_settings()
@@ -160,22 +165,33 @@ async def measure_clip(
     if not sess["experiment"] or sess["px_per_m"] is None:
         raise HTTPException(409, "choose an experiment and calibrate first")
     exp = catalog.EXPERIMENTS[sess["experiment"]]
+    spend(user["sub"], "measure")
 
+    acquire_heavy()
     workdir = settings.uploads_dir / session_id
     workdir.mkdir(parents=True, exist_ok=True)
-    raw = workdir / f"raw-{uuid.uuid4().hex}"
-    clip = workdir / f"clip-{uuid.uuid4().hex}.mp4"
     try:
-        raw.write_bytes(await video.read())
+        raw = workdir / f"raw-{uuid.uuid4().hex}"
+        clip = workdir / f"clip-{uuid.uuid4().hex}.mp4"
+        raw.write_bytes(await video.read(MAX_CLIP_BYTES + 1))
+        if raw.stat().st_size > MAX_CLIP_BYTES:
+            raise HTTPException(413, "clip too large")
         media.normalize_video(raw, clip)
         info = media.probe(clip)
+        if info.duration > MAX_CLIP_SECONDS:
+            raise HTTPException(422, "clip longer than 10 seconds")
         client = _meta()
         file_id = client.upload_file(clip)
         frames = parse_frames(client.sam_track_video(file_id, exp.object_prompt))
+        track = track_centroids(
+            frames,
+            out_w=media.NORMALIZED_WIDTH,
+            out_h=info.height * media.NORMALIZED_WIDTH / info.width,
+        )
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+        release_heavy()
 
-    track = track_centroids(frames, out_w=media.NORMALIZED_WIDTH, out_h=info.height * media.NORMALIZED_WIDTH / info.width)
     if len(track) < 5:
         raise HTTPException(422, "not enough detections of the object in the clip")
 
@@ -195,13 +211,18 @@ async def measure_clip(
     return result
 
 
+MAX_CLIP_BYTES = 50 * 1024 * 1024
+MAX_CLIP_SECONDS = 10.5
+
+
 class AgentIn(BaseModel):
-    session_id: str
-    text: str
+    session_id: str = Field(max_length=64)
+    text: str = Field(min_length=1, max_length=2000)
 
 
-@router.post("/agent")
+@router.post("/agent", dependencies=[Depends(rate_limit("agent"))])
 def agent(body: AgentIn, user: dict = Depends(require_user)):
+    spend(user["sub"], "agent")
     with connect() as conn:
         sess = _session(conn, body.session_id, user["sub"])
         client = _meta()
@@ -226,16 +247,20 @@ def agent(body: AgentIn, user: dict = Depends(require_user)):
                     (exp.id, sess["id"]),
                 )
                 actions.append({"type": "experiment", "id": exp.id})
-                messages.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps({"id": exp.id, "title": exp.title[sess["lang"]]})})
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": json.dumps({"id": exp.id, "title": exp.title[sess["lang"]]}),
+                })
         state = conn.execute("SELECT state FROM sessions WHERE id = ?", (sess["id"],)).fetchone()["state"]
     return {"say": say, "state": state, "actions": actions}
 
 
 class ReportIn(BaseModel):
-    session_id: str
+    session_id: str = Field(max_length=64)
 
 
-@router.post("/report")
+@router.post("/report", dependencies=[Depends(rate_limit("report"))])
 def report(body: ReportIn, user: dict = Depends(require_user)):
     settings = get_settings()
     with connect() as conn:
@@ -244,33 +269,37 @@ def report(body: ReportIn, user: dict = Depends(require_user)):
     if res is None:
         raise HTTPException(409, "no results for this session")
     if not settings.blob_token:
-        raise HTTPException(503, "BLOB_READ_WRITE_TOKEN not configured")
+        raise HTTPException(503, "report storage not configured")
+    spend(user["sub"], "report")
+
     exp = catalog.EXPERIMENTS[sess["experiment"]]
     lang = sess["lang"]
+    es = lang == "es"
     error_text = f"{res['error_pct']:.2f} %" if res["error_pct"] is not None else "—"
     ref_text = f"{res['ref_value']:.2f}" if res["ref_value"] is not None else "—"
     figures = [
         {"path": str(p), "caption": p.stem} for p in sorted((settings.plots_dir / sess["id"]).glob("*.png"))
     ]
+    report_id = uuid.uuid4().hex
     context = {
         "session_id": sess["id"],
-        "lang_babel": "spanish" if lang == "es" else "english",
+        "lang_babel": "spanish" if es else "english",
         "title": exp.title[lang],
         "author": user.get("name") or user["sub"],
         "date": sess["created_at"][:10],
         "labels": {
-            "objective": "Objetivo" if lang == "es" else "Objective",
-            "hypothesis": "Hipótesis" if lang == "es" else "Hypothesis",
-            "materials": "Materiales" if lang == "es" else "Materials",
-            "procedure": "Procedimiento" if lang == "es" else "Procedure",
-            "data": "Datos" if lang == "es" else "Data",
-            "quantity": "Magnitud" if lang == "es" else "Quantity",
-            "value": "Valor" if lang == "es" else "Value",
-            "reference": "Referencia" if lang == "es" else "Reference",
-            "error": "Error" if lang == "es" else "Error",
-            "analysis": "Análisis" if lang == "es" else "Analysis",
-            "figures": "Figuras" if lang == "es" else "Figures",
-            "conclusion": "Conclusión" if lang == "es" else "Conclusion",
+            "objective": "Objetivo" if es else "Objective",
+            "hypothesis": "Hipótesis" if es else "Hypothesis",
+            "materials": "Materiales" if es else "Materials",
+            "procedure": "Procedimiento" if es else "Procedure",
+            "data": "Datos" if es else "Data",
+            "quantity": "Magnitud" if es else "Quantity",
+            "value": "Valor" if es else "Value",
+            "reference": "Referencia" if es else "Reference",
+            "error": "Error",
+            "analysis": "Análisis" if es else "Analysis",
+            "figures": "Figuras" if es else "Figures",
+            "conclusion": "Conclusión" if es else "Conclusion",
         },
         "objective": exp.title[lang],
         "hypothesis": "",
@@ -286,20 +315,59 @@ def report(body: ReportIn, user: dict = Depends(require_user)):
         "figures": figures,
         "conclusion": "",
     }
-    pdf = reports.build_pdf(context, settings.reports_dir)
-    raise HTTPException(501, f"PDF compiled at {pdf}; Vercel Blob upload not implemented yet")
+
+    acquire_heavy()
+    try:
+        pdf = reports.build_pdf(context, settings.reports_dir)
+        try:
+            url = blob.upload_private_pdf(f"reports/{report_id}.pdf", pdf.read_bytes())
+        finally:
+            pdf.unlink(missing_ok=True)
+    finally:
+        release_heavy()
+
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO reports (id, session_id, blob_url) VALUES (?, ?, ?)",
+            (report_id, sess["id"], url),
+        )
+    return {"id": report_id, "pdf_url": f"/reports/{report_id}/pdf"}
 
 
-@router.get("/history")
+@router.get("/reports/{report_id}/pdf", dependencies=[Depends(rate_limit("history"))])
+def report_pdf(report_id: str, user: dict = Depends(require_user)):
+    if not re.fullmatch(r"[0-9a-f]{32}", report_id):
+        raise HTTPException(404, "report not found")
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT r.blob_url FROM reports r JOIN sessions s ON s.id = r.session_id
+            WHERE r.id = ? AND s.user_id = ?
+            """,
+            (report_id, user["sub"]),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(404, "report not found")
+    body, content_type = blob.download_private(row["blob_url"])
+    return Response(
+        content=body,
+        media_type=content_type,
+        headers={"Content-Disposition": f'attachment; filename="galileo-{report_id}.pdf"'},
+    )
+
+
+@router.get("/history", dependencies=[Depends(rate_limit("history"))])
 def history(user: dict = Depends(require_user)):
     with connect() as conn:
         rows = conn.execute(
             """
-            SELECT r.id, s.experiment, s.created_at AS date, r.blob_url AS pdf_url,
+            SELECT r.id, s.experiment, s.created_at AS date,
+                   '/reports/' || r.id || '/pdf' AS pdf_url,
                    (SELECT key_value FROM results WHERE session_id = s.id LIMIT 1) AS key_value
             FROM reports r JOIN sessions s ON s.id = r.session_id
             WHERE s.user_id = ?
             ORDER BY r.created_at DESC
+            LIMIT 100
             """,
             (user["sub"],),
         ).fetchall()
