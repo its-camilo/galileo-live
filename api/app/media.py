@@ -6,7 +6,7 @@ from pathlib import Path
 NORMALIZED_WIDTH = 960
 # Cuadros por segundo del clip que recibe SAM. Se fuerza tasa constante para que
 # índice de frame / fps sea el tiempo real (los celulares graban con tasa variable).
-MAX_FPS = 60
+MAX_FPS = 30
 MIN_FPS = 30
 
 
@@ -19,12 +19,12 @@ class VideoInfo:
 
 
 def target_fps(src: Path) -> int:
-    """60 fps si la cámara grabó a más de ~45 fps; si no, 30 (sin inventar cuadros de más)."""
+    """30 fps fijos: menos memoria en Render free y menos cuadros que SAM debe procesar."""
     try:
         fps = probe(src).fps
     except Exception:
         return MIN_FPS
-    return MAX_FPS if fps >= 45 else MIN_FPS
+    return MAX_FPS
 
 
 def normalize_video(src: Path, dst: Path, fps: int | None = None) -> None:

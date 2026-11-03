@@ -675,13 +675,16 @@ async def measure_clip(
         raw.write_bytes(await video.read(MAX_CLIP_BYTES + 1))
         if raw.stat().st_size > MAX_CLIP_BYTES:
             raise HTTPException(413, "clip too large")
+        log.info("measure: received %d bytes", raw.stat().st_size)
         media.normalize_video(raw, clip)
         info = media.probe(clip)
+        log.info("measure: normalized %dx%d %.1f fps %.1f s", info.width, info.height, info.fps, info.duration)
         if info.duration > MAX_CLIP_SECONDS:
             raise HTTPException(422, "clip longer than 10 seconds")
         client = _meta()
         try:
             file_id = client.upload_file(clip)
+            log.info("measure: uploaded to Meta, tracking with SAM")
             lines = client.sam_track_video(file_id, run.object_prompt(sess))
         except httpx.HTTPError as exc:
             log.exception("SAM video tracking failed")

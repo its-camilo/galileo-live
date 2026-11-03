@@ -5,7 +5,7 @@ export async function openCamera(): Promise<MediaStream> {
       width: { ideal: 1280 },
       height: { ideal: 720 },
       // Más cuadros por segundo = menos desenfoque y más detecciones de SAM en objetos rápidos.
-      frameRate: { ideal: 60, min: 24 },
+      frameRate: { ideal: 30, min: 24 },
     },
     audio: false,
   });

@@ -248,7 +248,7 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
     // Filtro 1: el nombre escrito se guarda antes de grabar (en iOS el blur puede no alcanzar a terminar).
     if (objectText.trim() && objectText.trim() !== (session?.object_prompt ?? "")) await saveObject();
     const mime = pickMime();
-    const opts: MediaRecorderOptions = { videoBitsPerSecond: 8_000_000 };
+    const opts: MediaRecorderOptions = { videoBitsPerSecond: 5_000_000 };
     if (mime) opts.mimeType = mime;
     const recorder = new MediaRecorder(stream, opts);
     chunksRef.current = [];
