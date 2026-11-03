@@ -9,6 +9,7 @@ from pathlib import Path
 import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from . import blob, catalog, reports, run
@@ -124,7 +125,7 @@ async def stt(
     data = await audio.read(10 * 1024 * 1024 + 1)
     if len(data) > 10 * 1024 * 1024:
         raise HTTPException(413, "audio too large")
-    result = _meta().transcribe(data, audio.filename or "audio.webm", lang_hint)
+    result = await run_in_threadpool(_meta().transcribe, data, audio.filename or "audio.webm", lang_hint)
     return {"text": result.get("text", ""), "lang": result.get("language", lang_hint)}
 
 
@@ -657,7 +658,19 @@ async def measure_clip(
     theta_deg: float | None = Form(None, ge=0, le=90),
     user: dict = Depends(require_consent),
 ):
-    """Graba-luego-analiza: el video se normaliza, SAM lo sigue, se borra en Meta y en el VPS."""
+    """Graba-luego-analiza: el video se normaliza, SAM lo sigue, se borra en Meta y en el servidor.
+
+    Solo la lectura del archivo es async; el trabajo pesado (ffmpeg, subida y SAM, que son
+    bloqueantes y tardan minutos) corre en un hilo. Si corriera en el event loop, /health
+    dejaría de responder y Render reiniciaría la instancia a mitad de la medición.
+    """
+    data = await video.read(MAX_CLIP_BYTES + 1)
+    if len(data) > MAX_CLIP_BYTES:
+        raise HTTPException(413, "clip too large")
+    return await run_in_threadpool(_measure_sync, session_id, data, theta_deg, user)
+
+
+def _measure_sync(session_id: str, data: bytes, theta_deg: float | None, user: dict):
     settings = get_settings()
     with connect() as conn:
         sess = _session(conn, session_id, user["sub"])
@@ -672,9 +685,8 @@ async def measure_clip(
     try:
         raw = workdir / f"raw-{uuid.uuid4().hex}"
         clip = workdir / f"clip-{uuid.uuid4().hex}.mp4"
-        raw.write_bytes(await video.read(MAX_CLIP_BYTES + 1))
-        if raw.stat().st_size > MAX_CLIP_BYTES:
-            raise HTTPException(413, "clip too large")
+        raw.write_bytes(data)
+        del data
         log.info("measure: received %d bytes", raw.stat().st_size)
         media.normalize_video(raw, clip)
         info = media.probe(clip)
