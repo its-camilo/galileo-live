@@ -13,6 +13,12 @@ from .routes import router
 from .security import MAX_BODY_BYTES, check_global, client_ip
 
 log = logging.getLogger("galileo")
+# Sin esto los log.info("measure: ...") no salen en los logs de Render (por defecto solo WARNING).
+if not log.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    log.addHandler(_h)
+log.setLevel(logging.INFO)
 
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",

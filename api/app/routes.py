@@ -629,7 +629,7 @@ class ObjectIn(BaseModel):
     object_prompt: str = Field(min_length=2, max_length=60)
 
 
-OBJECT_NAME_RE = re.compile(r"^[^\W\d_][^\W\d_ \-]{1,59}$")
+OBJECT_NAME_RE = re.compile(r"^[^\W\d_](?:[^\W\d_]|[ \-]){1,59}$")
 
 
 @router.post("/session/object", dependencies=[Depends(rate_limit("sessions"))])
