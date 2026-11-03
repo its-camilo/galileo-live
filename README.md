@@ -79,7 +79,17 @@ npm install
 npm run dev
 ```
 
-## Despliegue en el VPS
+## Despliegue del backend (Render, contenedor)
+
+El backend corre como contenedor (`api/Dockerfile`, con ffmpeg y tectonic) con disco persistente para SQLite. La definición está en `render.yaml`.
+
+1. En Render: **New → Blueprint**, conectar el repositorio `its-camilo/galileo-live`.
+2. Completar las variables marcadas como secretas: `APP_JWT_SECRET` (el mismo de Vercel), `MODEL_API_KEY`, `BLOB_READ_WRITE_TOKEN` y `ALLOWED_HOSTS` (el host que Render asigne, por ejemplo `galileo-live-api.onrender.com`).
+3. En Vercel, poner `NEXT_PUBLIC_API_URL` con la URL HTTPS del servicio y redeploy.
+
+El plan `starter` es necesario para tener disco persistente.
+
+## Despliegue en el VPS (anterior, en desuso)
 
 ```bash
 ./deploy/deploy_vps.sh
