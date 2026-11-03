@@ -84,7 +84,7 @@ def spend(user_id: str, bucket: str) -> None:
         conn.execute(
             """
             INSERT INTO usage (user_id, day, bucket, count) VALUES (?, ?, ?, 1)
-            ON CONFLICT (user_id, day, bucket) DO UPDATE SET count = count + 1
+            ON CONFLICT (user_id, day, bucket) DO UPDATE SET count = usage.count + 1
             """,
             (user_id, day, bucket),
         )

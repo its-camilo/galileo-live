@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from . import blob, catalog, reports, run
 from .auth import CONSENT_VERSION, require_consent, require_user
 from .config import get_settings
-from .db import connect
+from .db import NOW_TEXT, connect
 import shutil
 
 from . import media
@@ -479,7 +479,7 @@ def consent(body: ConsentIn, user: dict = Depends(require_user)):
     })
     with connect() as conn:
         conn.execute(
-            "UPDATE users SET consent_version = ?, consent_at = datetime('now'), consent_scope = ? WHERE id = ?",
+            "UPDATE users SET consent_version = ?, consent_at = " + NOW_TEXT + ", consent_scope = ? WHERE id = ?",
             (CONSENT_VERSION, scope, user["sub"]),
         )
     return {"consented": True, "consent_version": CONSENT_VERSION}

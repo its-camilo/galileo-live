@@ -29,7 +29,7 @@ def require_user(authorization: str | None = Header(default=None)) -> dict:
         raise HTTPException(401, "token lifetime too long")
     with connect() as conn:
         conn.execute(
-            "INSERT OR IGNORE INTO users (id, email, name) VALUES (?, ?, ?)",
+            "INSERT INTO users (id, email, name) VALUES (?, ?, ?) ON CONFLICT (id) DO NOTHING",
             (claims["sub"], claims["sub"], claims.get("name")),
         )
     return claims

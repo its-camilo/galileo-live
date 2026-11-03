@@ -79,15 +79,16 @@ npm install
 npm run dev
 ```
 
-## Despliegue del backend (Render, contenedor)
+## Despliegue del backend (Render gratis + Neon + ping)
 
-El backend corre como contenedor (`api/Dockerfile`, con ffmpeg y tectonic) con disco persistente para SQLite. La definición está en `render.yaml`.
+El backend corre como contenedor (`api/Dockerfile`, con ffmpeg y tectonic). Los datos viven en **PostgreSQL de Neon** (gratis), y los PDF en Vercel Blob. El disco de Render gratuito es temporal, así que no se guarda nada en él.
 
-1. En Render: **New → Blueprint**, conectar el repositorio `its-camilo/galileo-live`.
-2. Completar las variables marcadas como secretas: `APP_JWT_SECRET` (el mismo de Vercel), `MODEL_API_KEY`, `BLOB_READ_WRITE_TOKEN` y `ALLOWED_HOSTS` (el host que Render asigne, por ejemplo `galileo-live-api.onrender.com`).
-3. En Vercel, poner `NEXT_PUBLIC_API_URL` con la URL HTTPS del servicio y redeploy.
+1. **Neon:** crear un proyecto gratuito y copiar la cadena `postgresql://...?sslmode=require` (variable `DATABASE_URL`).
+2. **Render:** **New → Blueprint**, conectar `its-camilo/galileo-live`. Completar las variables secretas: `APP_JWT_SECRET` (igual que en Vercel), `MODEL_API_KEY`, `BLOB_READ_WRITE_TOKEN`, `DATABASE_URL` y `ALLOWED_HOSTS` (el host que Render asigne, por ejemplo `galileo-live-api.onrender.com`).
+3. **Ping:** en UptimeRobot (gratis) crear un monitor HTTP(s) a `https://<host>/health` con intervalo de 5 minutos. Así el servicio no se duerme (Render gratis se duerme tras 15 minutos sin tráfico).
+4. **Vercel:** poner `NEXT_PUBLIC_API_URL` con la URL HTTPS del servicio y redeploy.
 
-El plan `starter` es necesario para tener disco persistente.
+Limitaciones del plan gratuito: CPU y memoria reducidas (las mediciones y los informes tardan más) y arranque en frío de unos segundos tras reinicios.
 
 ## Despliegue en el VPS (anterior, en desuso)
 

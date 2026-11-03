@@ -19,12 +19,9 @@ class Settings:
     meta_chat_model: str
     meta_contributor_model: str
     blob_token: str | None
+    database_url: str | None = None
     allowed_origins: tuple[str, ...] = field(default_factory=tuple)
     allowed_hosts: tuple[str, ...] = field(default_factory=tuple)
-
-    @property
-    def db_path(self) -> Path:
-        return self.data_dir / "galileo.db"
 
     @property
     def uploads_dir(self) -> Path:
@@ -51,6 +48,7 @@ def get_settings() -> Settings:
         meta_chat_model=os.environ.get("META_CHAT_MODEL", "muse-spark-1.3"),
         meta_contributor_model=os.environ.get("META_CONTRIBUTOR_MODEL", "muse-spark-1.3-contributor"),
         blob_token=os.environ.get("BLOB_READ_WRITE_TOKEN") or None,
+        database_url=os.environ.get("DATABASE_URL") or None,
         allowed_origins=_csv("ALLOWED_ORIGINS", "https://galileo-live.vercel.app,http://localhost:3000"),
         allowed_hosts=_csv("ALLOWED_HOSTS", "vps-oracle-01.tailfb0395.ts.net,127.0.0.1,localhost"),
     )

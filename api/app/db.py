@@ -1,14 +1,21 @@
-import sqlite3
 from contextlib import contextmanager
+
+import psycopg
+from psycopg.rows import dict_row
 
 from .config import get_settings
 
-SCHEMA = """
+NOW_TEXT = "to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')"
+
+SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     email TEXT NOT NULL,
     name TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT ({NOW_TEXT}),
+    consent_version TEXT,
+    consent_at TEXT,
+    consent_scope TEXT
 );
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
@@ -16,28 +23,38 @@ CREATE TABLE IF NOT EXISTS sessions (
     experiment TEXT,
     lang TEXT NOT NULL DEFAULT 'en',
     state TEXT NOT NULL DEFAULT 'choose',
-    px_per_m REAL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    px_per_m DOUBLE PRECISION,
+    created_at TEXT NOT NULL DEFAULT ({NOW_TEXT}),
+    object_prompt TEXT,
+    theta_deg DOUBLE PRECISION,
+    description TEXT,
+    run_state TEXT NOT NULL DEFAULT 'idle',
+    run_t0 DOUBLE PRECISION,
+    anchor_x DOUBLE PRECISION,
+    anchor_y DOUBLE PRECISION,
+    miss INTEGER NOT NULL DEFAULT 0,
+    chat TEXT
 );
 CREATE TABLE IF NOT EXISTS results (
     session_id TEXT NOT NULL REFERENCES sessions(id),
     key_name TEXT NOT NULL,
-    key_value REAL,
-    ref_value REAL,
-    error_pct REAL,
-    r2 REAL
+    key_value DOUBLE PRECISION,
+    ref_value DOUBLE PRECISION,
+    error_pct DOUBLE PRECISION,
+    r2 DOUBLE PRECISION,
+    series TEXT
 );
 CREATE TABLE IF NOT EXISTS reports (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES sessions(id),
     blob_url TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT ({NOW_TEXT})
 );
 CREATE TABLE IF NOT EXISTS points (
     session_id TEXT NOT NULL REFERENCES sessions(id),
-    t REAL NOT NULL,
-    cx REAL NOT NULL,
-    cy REAL NOT NULL
+    t DOUBLE PRECISION NOT NULL,
+    cx DOUBLE PRECISION NOT NULL,
+    cy DOUBLE PRECISION NOT NULL
 );
 CREATE INDEX IF NOT EXISTS points_session ON points (session_id, t);
 CREATE TABLE IF NOT EXISTS usage (
@@ -50,43 +67,44 @@ CREATE TABLE IF NOT EXISTS usage (
 """
 
 
+class Connection:
+    """Envoltura fina sobre psycopg: usa `?` como marcador, igual que antes."""
+
+    def __init__(self, raw: psycopg.Connection):
+        self._raw = raw
+
+    def execute(self, sql: str, params: tuple | list = ()):
+        return self._raw.execute(sql.replace("?", "%s"), params)
+
+
 @contextmanager
 def connect():
     settings = get_settings()
-    settings.data_dir.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(settings.db_path)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
+    if not settings.database_url:
+        raise RuntimeError("DATABASE_URL not configured")
+    raw = psycopg.connect(settings.database_url, row_factory=dict_row)
+    conn = Connection(raw)
     try:
         yield conn
-        conn.commit()
+        raw.commit()
+    except Exception:
+        raw.rollback()
+        raise
     finally:
-        conn.close()
+        raw.close()
 
 
 def init_db() -> None:
     with connect() as conn:
-        conn.executescript(SCHEMA)
-        cols = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
-        for name in ("consent_version", "consent_at", "consent_scope"):
-            if name not in cols:
-                conn.execute(f"ALTER TABLE users ADD COLUMN {name} TEXT")
-        migrate_columns(conn, "sessions", {
-            "object_prompt": "TEXT",
-            "theta_deg": "REAL",
-            "description": "TEXT",
-            "run_state": "TEXT NOT NULL DEFAULT 'idle'",
-            "run_t0": "REAL",
-            "anchor_x": "REAL",
-            "anchor_y": "REAL",
-            "miss": "INTEGER NOT NULL DEFAULT 0",
-            "chat": "TEXT",
-        })
-        migrate_columns(conn, "results", {"series": "TEXT"})
+        for statement in SCHEMA.split(";"):
+            if statement.strip():
+                conn.execute(statement)
+        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_version TEXT")
+        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_at TEXT")
+        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_scope TEXT")
 
 
-def migrate_columns(conn, table: str, columns: dict[str, str]) -> None:
-    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
-    for name, ddl in columns.items():
-        if name not in existing:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+def reset_db_for_tests() -> None:
+    with connect() as conn:
+        conn.execute("DROP TABLE IF EXISTS points, results, reports, sessions, usage, users CASCADE")
+    init_db()
