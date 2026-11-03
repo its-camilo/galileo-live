@@ -54,8 +54,8 @@ def _span(values: list[float]) -> float:
 
 def pick_moving_track(
     tracks: dict[int, list[tuple[int, float, float, float]]],
-    min_points: int = 5,
-    min_move: float = 0.04,
+    min_points: int = 4,
+    min_move: float = 0.025,
 ) -> tuple[int | None, float]:
     """Elige, entre los objetos que coinciden con el nombre, el que más se desplaza.
 
@@ -143,6 +143,45 @@ class MetaClient:
             text = " ".join(p.get("text", "") for p in text if isinstance(p, dict))
         text = re.sub(r"[^A-Za-z \-]", "", text).strip().lower()
         return " ".join(text.split()[:4])
+
+    def suggest_concepts(self, frame_jpeg: bytes, wanted: str) -> list[str]:
+        """Muse Spark mira un cuadro del clip y propone nombres alternativos para SAM (de específico a genérico)."""
+        b64 = base64.b64encode(frame_jpeg).decode()
+        out = self.chat(
+            [
+                {
+                    "role": "developer",
+                    "content": "You help a segmentation model (SAM) find one object in a physics experiment video. "
+                    "Look at the frame. The user calls the moving object: '" + wanted + "'. Reply ONLY with JSON "
+                    '{"concepts": [...]} holding up to 3 short English noun phrases (1 to 3 words each), from most '
+                    "specific to most generic, that name that object as it actually looks in this frame "
+                    "(for example: 'blue toy car', 'toy car', 'car'). No other text.",
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": f"Object: {wanted}"},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                    ],
+                },
+            ],
+            reasoning_effort="low",
+        )
+        text = out["choices"][0]["message"].get("content") or ""
+        if isinstance(text, list):
+            text = " ".join(p.get("text", "") for p in text if isinstance(p, dict))
+        m = re.search(r"\{.*\}", text, re.S)
+        try:
+            items = json.loads(m.group(0)).get("concepts", []) if m else []
+        except (json.JSONDecodeError, AttributeError):
+            items = []
+        clean = []
+        for c in items:
+            c = re.sub(r"[^a-z \-]", "", str(c).lower()).strip()
+            c = " ".join(c.split()[:3])
+            if len(c) >= 2 and c not in clean:
+                clean.append(c)
+        return clean[:3]
 
     def upload_file(self, path: Path) -> str:
         with path.open("rb") as fh:

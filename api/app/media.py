@@ -75,3 +75,13 @@ def probe(path: Path) -> VideoInfo:
         fps=fps,
         duration=duration,
     )
+
+
+def middle_frame_jpeg(path: Path, at: float) -> bytes:
+    """Un cuadro JPEG del clip (para que Muse Spark proponga nombres alternativos del objeto)."""
+    out = subprocess.run(
+        ["ffmpeg", "-v", "error", "-ss", f"{max(at, 0):.2f}", "-i", str(path), "-frames:v", "1",
+         "-f", "image2", "-c:v", "mjpeg", "-q:v", "4", "pipe:1"],
+        check=True, capture_output=True, timeout=60,
+    )
+    return out.stdout

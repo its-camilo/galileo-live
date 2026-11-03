@@ -608,6 +608,18 @@ def _diagram(sess, out_dir: Path) -> Path | None:
 
 
 MAX_CLIP_BYTES = 50 * 1024 * 1024
+MAX_SAM_TRIES = 4
+
+
+def _concept_chain(wanted: str) -> list[str]:
+    """Del nombre del usuario a versiones más generales: 'small red toy car' -> ['small red toy car', 'toy car', 'car']."""
+    words = wanted.split()
+    chain = [wanted]
+    if len(words) > 2:
+        chain.append(" ".join(words[-2:]))
+    if len(words) > 1:
+        chain.append(words[-1])
+    return chain
 MAX_CLIP_SECONDS = 10.5
 MOVE_M_TRIM = 0.03
 
@@ -696,19 +708,51 @@ def _measure_sync(session_id: str, data: bytes, theta_deg: float | None, user: d
         client = _meta()
         try:
             file_id = client.upload_file(clip)
-            log.info("measure: uploaded to Meta, tracking with SAM")
-            lines = client.sam_track_video(file_id, run.object_prompt(sess))
         except httpx.HTTPError as exc:
-            log.exception("SAM video tracking failed")
+            log.exception("Meta file upload failed")
             raise HTTPException(502, "segmentation unavailable") from exc
-        # Filtro 2: de todos los objetos con ese nombre, solo el que se mueve.
-        tracks = parse_tracks(lines)
-        oid, moved = pick_moving_track(tracks)
-        log.info("measure: %d objects matched, moving id=%s span=%.3f", len(tracks), oid, moved)
-        if not tracks:
-            raise HTTPException(422, "not enough detections of the object in the clip")
+
+        # Filtro 1 (laxo): primero el nombre del usuario; si SAM no encuentra nada que se mueva,
+        # se prueba con su sustantivo principal y con nombres que propone Muse Spark viendo el clip.
+        wanted = run.object_prompt(sess)
+        concepts = _concept_chain(wanted)
+        tried: list[str] = []
+        tracks: dict = {}
+        oid, moved = None, 0.0
+        suggested = False
+        i = 0
+        while i < len(concepts) and len(tried) < MAX_SAM_TRIES:
+            concept = concepts[i]
+            i += 1
+            if concept in tried:
+                continue
+            tried.append(concept)
+            try:
+                log.info("measure: SAM concept=%r", concept)
+                lines = client.sam_track_video(file_id, concept)
+            except httpx.HTTPError as exc:
+                log.exception("SAM video tracking failed")
+                raise HTTPException(502, "segmentation unavailable") from exc
+            # Filtro 2: de todos los objetos con ese nombre, solo el que se mueve.
+            tracks = parse_tracks(lines)
+            oid, moved = pick_moving_track(tracks)
+            log.info("measure: concept=%r lines=%d objects=%d moving id=%s span=%.3f",
+                     concept, len(lines), len(tracks), oid, moved)
+            if oid is not None:
+                break
+            if not suggested:
+                suggested = True
+                try:
+                    frame = media.middle_frame_jpeg(clip, info.duration / 2)
+                    extra = client.suggest_concepts(frame, wanted)
+                    log.info("measure: Muse Spark suggested %s", extra)
+                    concepts[i:i] = [c for c in extra if c not in tried and c not in concepts[i:]]
+                except Exception as exc:  # la sugerencia es opcional
+                    log.warning("concept suggestion failed: %s", type(exc).__name__)
         if oid is None:
-            raise HTTPException(422, "the object did not move enough in the clip")
+            if any(tracks.values()) or moved > 0:
+                raise HTTPException(422, "the object did not move enough in the clip")
+            raise HTTPException(422, "not enough detections of the object in the clip")
         out_h = info.height * FRAME_WIDTH / info.width
         track = [(f, cx * FRAME_WIDTH, cy * out_h) for f, cx, cy, _ in tracks[oid]]
     finally:
