@@ -20,7 +20,7 @@ import shutil
 
 from . import media
 from .meta import MetaClient, MetaNotConfigured, parse_frames, parse_tracks, pick_moving_track, track_centroids
-from .security import acquire_heavy, rate_limit, release_heavy, spend
+from .security import acquire_heavy, free_memory, rate_limit, release_heavy, spend
 
 log = logging.getLogger("galileo.routes")
 
@@ -396,7 +396,12 @@ def report(body: ReportIn, user: dict = Depends(require_consent)):
         "conclusion": conclusion,
     }
 
-    pdf = reports.build_pdf(context, settings.reports_dir)
+    acquire_heavy()  # nunca a la vez que una medición: 512 MB no alcanzan para las dos
+    try:
+        pdf = reports.build_pdf(context, settings.reports_dir)
+    finally:
+        release_heavy()
+        free_memory()
     try:
         url = blob.upload_private_pdf(f"reports/{report_id}.pdf", pdf.read_bytes())
     finally:
@@ -676,31 +681,39 @@ async def measure_clip(
     bloqueantes y tardan minutos) corre en un hilo. Si corriera en el event loop, /health
     dejaría de responder y Render reiniciaría la instancia a mitad de la medición.
     """
-    data = await video.read(MAX_CLIP_BYTES + 1)
-    if len(data) > MAX_CLIP_BYTES:
-        raise HTTPException(413, "clip too large")
-    return await run_in_threadpool(_measure_sync, session_id, data, theta_deg, user)
+    # El clip se copia a disco por partes de 1 MB: nunca entra entero a la RAM.
+    workdir = get_settings().uploads_dir / f"{session_id}-{uuid.uuid4().hex[:8]}"
+    workdir.mkdir(parents=True, exist_ok=True)
+    raw = workdir / "raw"
+    size = 0
+    try:
+        with raw.open("wb") as fh:
+            while chunk := await video.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_CLIP_BYTES:
+                    raise HTTPException(413, "clip too large")
+                fh.write(chunk)
+        await video.close()
+        return await run_in_threadpool(_measure_sync, session_id, workdir, raw, theta_deg, user)
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+        free_memory()
 
 
-def _measure_sync(session_id: str, data: bytes, theta_deg: float | None, user: dict):
-    settings = get_settings()
+def _measure_sync(session_id: str, workdir: Path, raw: Path, theta_deg: float | None, user: dict):
     with connect() as conn:
         sess = _session(conn, session_id, user["sub"])
     _px_per_m(sess)
     spend(user["sub"], "measure")
 
     acquire_heavy()
-    workdir = settings.uploads_dir / session_id
-    workdir.mkdir(parents=True, exist_ok=True)
     client = None
     file_id = None
     try:
-        raw = workdir / f"raw-{uuid.uuid4().hex}"
-        clip = workdir / f"clip-{uuid.uuid4().hex}.mp4"
-        raw.write_bytes(data)
-        del data
+        clip = workdir / "clip.mp4"
         log.info("measure: received %d bytes", raw.stat().st_size)
         media.normalize_video(raw, clip)
+        raw.unlink(missing_ok=True)  # el original ya no hace falta
         info = media.probe(clip)
         log.info("measure: normalized %dx%d %.1f fps %.1f s", info.width, info.height, info.fps, info.duration)
         if info.duration > MAX_CLIP_SECONDS:
@@ -711,6 +724,13 @@ def _measure_sync(session_id: str, data: bytes, theta_deg: float | None, user: d
         except httpx.HTTPError as exc:
             log.exception("Meta file upload failed")
             raise HTTPException(502, "segmentation unavailable") from exc
+        # Del video solo nos interesan sus datos: se guarda un cuadro pequeño por si hay que pedir
+        # nombres alternativos a Muse Spark y la copia local se borra ya.
+        try:
+            frame = media.middle_frame_jpeg(clip, info.duration / 2)
+        except Exception:
+            frame = b""
+        clip.unlink(missing_ok=True)
 
         # Filtro 1 (laxo): primero el nombre del usuario; si SAM no encuentra nada que se mueva,
         # se prueba con su sustantivo principal y con nombres que propone Muse Spark viendo el clip.
@@ -743,7 +763,8 @@ def _measure_sync(session_id: str, data: bytes, theta_deg: float | None, user: d
             if not suggested:
                 suggested = True
                 try:
-                    frame = media.middle_frame_jpeg(clip, info.duration / 2)
+                    if not frame:
+                        raise ValueError("no frame")
                     extra = client.suggest_concepts(frame, wanted)
                     log.info("measure: Muse Spark suggested %s", extra)
                     concepts[i:i] = [c for c in extra if c not in tried and c not in concepts[i:]]
@@ -755,12 +776,15 @@ def _measure_sync(session_id: str, data: bytes, theta_deg: float | None, user: d
             raise HTTPException(422, "not enough detections of the object in the clip")
         out_h = info.height * FRAME_WIDTH / info.width
         track = [(f, cx * FRAME_WIDTH, cy * out_h) for f, cx, cy, _ in tracks[oid]]
+        del tracks, frame
     finally:
+        # Apenas SAM termina, el video se borra en Meta y en el servidor.
         if client is not None and file_id is not None:
             try:
                 client.delete_file(file_id)
+                log.info("measure: clip deleted at Meta")
             except Exception:
-                pass
+                log.warning("could not delete clip at Meta")
         shutil.rmtree(workdir, ignore_errors=True)
         release_heavy()
 

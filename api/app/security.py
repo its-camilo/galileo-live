@@ -55,6 +55,18 @@ _window = SlidingWindow()
 heavy_slot = threading.BoundedSemaphore(1)
 
 
+def free_memory() -> None:
+    """Devuelve al sistema la memoria que Python liberó (el plan free de Render tiene 512 MB)."""
+    import ctypes
+    import gc
+
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except OSError:
+        pass
+
+
 def client_ip(request: Request) -> str:
     peer = request.client.host if request.client else "unknown"
     if peer in ("127.0.0.1", "::1"):
@@ -97,7 +109,7 @@ def spend(user_id: str, bucket: str) -> None:
 
 
 def acquire_heavy() -> None:
-    if not heavy_slot.acquire(blocking=False):
+    if not heavy_slot.acquire(timeout=60):  # espera a que termine la otra tarea pesada
         raise HTTPException(503, "server busy, try again in a moment", headers={"Retry-After": "15"})
 
 

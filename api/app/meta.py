@@ -18,6 +18,7 @@ BOX_RE = re.compile(rf"<\|box;x1={NUM};y1={NUM};x2={NUM};y2={NUM};w={NUM};h={NUM
 
 REC_RE = re.compile(rf"(\d+)<\|box;x1={NUM};y1={NUM};x2={NUM};y2={NUM};w={NUM};h={NUM}(?:;c={NUM})?\|>")
 LINE_FRAME_RE = re.compile(r"^\s*<(\d+)f>")
+MASK_RE = re.compile(r"<\|mask;[^|]*\|>")
 
 
 def parse_tracks(lines: list[str]) -> dict[int, list[tuple[int, float, float, float]]]:
@@ -222,7 +223,10 @@ class MetaClient:
             ],
             "metadata": {"mask_encoding": "one_bit"},
         }
+        # Las máscaras (base85) son lo que más pesa y no se usan: se descartan línea a línea
+        # mientras llega el stream, para no tener el resultado completo en memoria.
         parts: list[str] = []
+        buf = ""
         with httpx.stream(
             "POST",
             f"{self._base}/responses",
@@ -239,9 +243,14 @@ class MetaClient:
                     break
                 event = json.loads(data)
                 if event.get("type") == "response.output_text.delta":
-                    parts.append(event.get("delta", ""))
+                    buf += event.get("delta", "")
+                    while "\n" in buf:
+                        done, buf = buf.split("\n", 1)
+                        parts.append(MASK_RE.sub("", done))
                 elif event.get("type") == "response.completed":
                     break
+        if buf:
+            parts.append(MASK_RE.sub("", buf))
         return parts
 
     def delete_file(self, file_id: str) -> None:

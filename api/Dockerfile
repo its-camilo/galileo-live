@@ -1,6 +1,7 @@
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
+    MALLOC_ARENA_MAX=2 \
     PYTHONUNBUFFERED=1 \
     GALILEO_DATA_DIR=/data \
     MPLCONFIGDIR=/opt/galileo/mpl \
