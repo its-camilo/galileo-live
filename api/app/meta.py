@@ -136,9 +136,11 @@ class MetaClient:
                 },
                 {"role": "user", "content": name},
             ],
-            reasoning_effort="minimal",
+            reasoning_effort="low",
         )
-        text = out["choices"][0]["message"]["content"] or ""
+        text = out["choices"][0]["message"].get("content") or ""
+        if isinstance(text, list):
+            text = " ".join(p.get("text", "") for p in text if isinstance(p, dict))
         text = re.sub(r"[^A-Za-z \-]", "", text).strip().lower()
         return " ".join(text.split()[:4])
 

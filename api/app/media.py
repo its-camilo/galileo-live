@@ -31,11 +31,15 @@ def normalize_video(src: Path, dst: Path, fps: int | None = None) -> None:
     fps = fps or target_fps(src)
     subprocess.run(
         [
-            "ffmpeg", "-y", "-i", str(src),
+            # Render free tiene 512 MB: x264 abre muchos hilos (según los núcleos del host) y cada
+            # uno guarda cuadros; con 2 hilos y lookahead corto la memoria queda acotada.
+            "ffmpeg", "-y", "-threads", "2", "-i", str(src),
             "-an",
             "-vf", f"fps={fps},scale={NORMALIZED_WIDTH}:-2:flags=lanczos",
             "-fps_mode", "cfr",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-threads", "2", "-x264-params", "rc-lookahead=10:sync-lookahead=0",
+            "-filter_threads", "1",
             "-pix_fmt", "yuv420p",
             "-movflags", "+faststart",
             str(dst),

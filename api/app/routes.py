@@ -2,6 +2,7 @@ import json
 import logging
 import re
 import threading
+import unicodedata
 import uuid
 from pathlib import Path
 
@@ -628,8 +629,12 @@ def set_object(body: ObjectIn, user: dict = Depends(require_consent)):
     if not name.isascii() or (prompt and any(w in prompt.split() for w in SPANISH_HINTS)):
         try:
             prompt = _meta().english_object_name(name) or prompt
-        except (MetaNotConfigured, httpx.HTTPError, KeyError, IndexError):
-            pass
+        except (MetaNotConfigured, httpx.HTTPError, KeyError, IndexError, TypeError) as exc:
+            log.warning("object name translation failed: %s", type(exc).__name__)
+    if not re.match(r"^[a-z][a-z \-]{1,59}$", prompt):
+        # Sin traducción disponible: quitar tildes (camión -> camion) antes de rechazar.
+        prompt = unicodedata.normalize("NFKD", name.lower()).encode("ascii", "ignore").decode()
+        prompt = re.sub(r"[^a-z \-]", "", prompt).strip()
     if not re.match(r"^[a-z][a-z \-]{1,59}$", prompt):
         raise HTTPException(422, "object name must be letters only")
     with connect() as conn:
