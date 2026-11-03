@@ -40,14 +40,6 @@ app = FastAPI(
     openapi_url=None,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=list(settings.allowed_origins),
-    allow_methods=["GET", "POST"],
-    allow_headers=["Authorization", "Content-Type"],
-    allow_credentials=False,
-    max_age=600,
-)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.allowed_hosts))
 app.include_router(router)
 
@@ -63,10 +55,28 @@ async def guard(request: Request, call_next):
             content={"detail": "rate limit exceeded"},
             headers={"Retry-After": "60"},
         )
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        # Se responde aquí (dentro de CORS) para que el navegador vea el 500 real
+        # y no un "error de red" por falta de cabeceras CORS.
+        log.exception("unhandled error on %s from %s", request.url.path, client_ip(request))
+        response = JSONResponse(status_code=500, content={"detail": "internal error"})
     for key, value in SECURITY_HEADERS.items():
         response.headers.setdefault(key, value)
     return response
+
+
+# CORS va de último para quedar por fuera de todo: así 413, 429 y 500 también
+# llevan Access-Control-Allow-Origin y el navegador muestra el error real.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(settings.allowed_origins),
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
+    allow_credentials=False,
+    max_age=600,
+)
 
 
 @app.exception_handler(httpx.HTTPError)
