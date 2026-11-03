@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Button } from "@/components/base/buttons/button";
+import { useEffect, useRef, useState } from "react";
+import { Button, ButtonLink } from "@/components/base/buttons/button";
 import { Spinner } from "@/components/base/spinner/spinner";
 import { api, apiBlob, errorKey } from "@/lib/api";
 import { experimentUi, isExperimentId } from "@/lib/catalog-ui";
@@ -20,19 +20,26 @@ export function HistoryList({ lang }: { lang: Lang }) {
       .catch((e) => setError(T[`err${cap(errorKey(e))}` as "errGeneric"] ?? T.errGeneric));
   }, [T]);
 
-  async function download(item: Item) {
+  const [ready, setReady] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState<string | null>(null);
+
+  // Primer toque: trae el PDF. Segundo toque: lo abre con un gesto real (iOS Safari bloquea a.click() tras un await).
+  async function fetchPdf(item: Item) {
+    setLoading(item.id);
     try {
       const blob = await apiBlob(item.pdf_url);
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `galileo-${item.id.slice(0, 8)}.pdf`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setReady((r) => ({ ...r, [item.id]: url }));
     } catch (e) {
       setError(T[`err${cap(errorKey(e))}` as "errGeneric"] ?? T.errGeneric);
+    } finally {
+      setLoading(null);
     }
   }
+
+  const readyRef = useRef(ready);
+  readyRef.current = ready;
+  useEffect(() => () => Object.values(readyRef.current).forEach((u) => URL.revokeObjectURL(u)), []);
 
   if (error)
     return (
@@ -62,9 +69,28 @@ export function HistoryList({ lang }: { lang: Lang }) {
               </span>
             </div>
             <span className="readout small">{item.key_value !== null ? item.key_value.toFixed(3) : "—"}</span>
-            <Button type="button" variant="secondary" size="small" onClick={() => download(item)}>
-              {T.historyDownload}
-            </Button>
+            {ready[item.id] ? (
+              <ButtonLink
+                variant="primary"
+                size="small"
+                href={ready[item.id]}
+                download={`galileo-${item.id.slice(0, 8)}.pdf`}
+                target="_blank"
+                rel="noopener"
+              >
+                {T.historyOpen}
+              </ButtonLink>
+            ) : (
+              <Button
+                type="button"
+                variant="secondary"
+                size="small"
+                onClick={() => fetchPdf(item)}
+                disabled={loading === item.id}
+              >
+                {loading === item.id ? <Spinner size="sm" aria-label={T.historyLoading} /> : T.historyDownload}
+              </Button>
+            )}
           </li>
         );
       })}

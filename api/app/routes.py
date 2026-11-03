@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import threading
 import uuid
@@ -18,6 +19,8 @@ import shutil
 from . import media
 from .meta import MetaClient, MetaNotConfigured, parse_frames, track_centroids
 from .security import acquire_heavy, rate_limit, release_heavy, spend
+
+log = logging.getLogger("galileo.routes")
 
 router = APIRouter()
 
@@ -144,8 +147,15 @@ def live(body: LiveIn, user: dict = Depends(require_consent)):
             ],
         },
     ]
-    reply = _meta().chat(messages)
-    content = reply["choices"][0]["message"].get("content") or ""
+    try:
+        reply = _meta().chat(messages)
+        content = reply["choices"][0]["message"].get("content") or ""
+    except httpx.HTTPStatusError as exc:
+        log.warning("live guide: Meta API returned %s", exc.response.status_code)
+        raise HTTPException(502, "guide unavailable")
+    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
+        log.warning("live guide failed: %s", type(exc).__name__)
+        raise HTTPException(502, "guide unavailable")
     match = re.search(r"\{.*\}", content, re.S)
     try:
         parsed = json.loads(match.group(0)) if match else {}

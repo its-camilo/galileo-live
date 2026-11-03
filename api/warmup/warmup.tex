@@ -1,0 +1,26 @@
+% Mismo preámbulo que app/templates/report.tex.j2, para dejar los paquetes en caché.
+\documentclass[11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage[BABEL_LANG]{babel}
+\title{Warm-up}
+\author{Galileo Live}
+\date{}
+\begin{document}
+\maketitle
+\section*{Datos}
+\begin{tabular}{lrrrr}
+\toprule
+a & 1.000 & 1.00 & 0.00 \% & $R^2$ \\
+\midrule
+x & 2.000 & 2.00 & 0.00 \% & 0.9999 \\
+\bottomrule
+\end{tabular}
+\begin{itemize}\item áéíóú ñ\end{itemize}
+\begin{enumerate}\item $x(t)=x_0+v_0t+\tfrac{1}{2}at^2$\end{enumerate}
+\begin{figure}[h]\centering\includegraphics[width=0.6\linewidth]{fig.png}\caption{x-t}\end{figure}
+\end{document}

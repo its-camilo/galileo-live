@@ -53,6 +53,7 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [report, setReport] = useState<{ url: string; name: string } | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
   const [frame, setFrame] = useState<Frame | null>(null);
@@ -294,24 +295,27 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
     }
   }
 
-  async function downloadReport() {
+  // Dos pasos: generar el informe y luego descargarlo con un toque real del usuario.
+  // iOS Safari ignora a.click() si llega después de una espera larga (sin gesto del usuario).
+  async function generateReport() {
+    if (report) return;
     setBusy(true);
     setError(null);
     try {
       const r = await api<{ pdf_url: string }>("/report", { json: { session_id: sessionId } });
       const blob = await apiBlob(r.pdf_url);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `galileo-${sessionId.slice(0, 8)}.pdf`;
-      a.click();
+      setReport({ url: URL.createObjectURL(blob), name: `galileo-${sessionId.slice(0, 8)}.pdf` });
       toast(T.reportDone);
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) {
       setError(fail(e, T));
     } finally {
       setBusy(false);
     }
+  }
+
+  function clearReport() {
+    if (report) URL.revokeObjectURL(report.url);
+    setReport(null);
   }
 
   if (!session) {
@@ -554,14 +558,21 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
               <Plot t={result.series.t} y={result.series.a} label={T.plotA} unit={unit} />
             </div>
           )}
-          <Button type="button" variant="primary" className="w-full" onClick={downloadReport} disabled={busy}>
-            {busy ? T.reportBusy : T.makeReport}
-          </Button>
+          {report ? (
+            <ButtonLink variant="primary" className="w-full" href={report.url} download={report.name} target="_blank" rel="noopener">
+              {T.reportDownload}
+            </ButtonLink>
+          ) : (
+            <Button type="button" variant="primary" className="w-full" onClick={generateReport} disabled={busy}>
+              {busy ? T.reportBusy : T.makeReport}
+            </Button>
+          )}
           <div className="row">
             <Button
               type="button"
               variant="secondary"
               onClick={() => {
+                clearReport();
                 setResult(null);
                 setPhase("record");
               }}
