@@ -246,7 +246,9 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
     if (!stream || recording) return;
     setError(null);
     const mime = pickMime();
-    const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    const opts: MediaRecorderOptions = { videoBitsPerSecond: 8_000_000 };
+    if (mime) opts.mimeType = mime;
+    const recorder = new MediaRecorder(stream, opts);
     chunksRef.current = [];
     recorder.ondataavailable = (e) => {
       if (e.data.size) chunksRef.current.push(e.data);

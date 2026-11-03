@@ -3,7 +3,11 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-NORMALIZED_WIDTH = 640
+NORMALIZED_WIDTH = 960
+# Cuadros por segundo del clip que recibe SAM. Se fuerza tasa constante para que
+# índice de frame / fps sea el tiempo real (los celulares graban con tasa variable).
+MAX_FPS = 60
+MIN_FPS = 30
 
 
 @dataclass(frozen=True)
@@ -14,13 +18,25 @@ class VideoInfo:
     duration: float
 
 
-def normalize_video(src: Path, dst: Path) -> None:
+def target_fps(src: Path) -> int:
+    """60 fps si la cámara grabó a más de ~45 fps; si no, 30 (sin inventar cuadros de más)."""
+    try:
+        fps = probe(src).fps
+    except Exception:
+        return MIN_FPS
+    return MAX_FPS if fps >= 45 else MIN_FPS
+
+
+def normalize_video(src: Path, dst: Path, fps: int | None = None) -> None:
+    fps = fps or target_fps(src)
     subprocess.run(
         [
             "ffmpeg", "-y", "-i", str(src),
             "-an",
-            "-vf", f"scale={NORMALIZED_WIDTH}:-2",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-vf", f"fps={fps},scale={NORMALIZED_WIDTH}:-2:flags=lanczos",
+            "-fps_mode", "cfr",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-pix_fmt", "yuv420p",
             "-movflags", "+faststart",
             str(dst),
         ],
