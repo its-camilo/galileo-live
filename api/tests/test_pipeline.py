@@ -59,3 +59,33 @@ def test_parse_sam_frames_and_track():
     assert idx == 0
     assert cx == pytest.approx(((211 + 270) / 2) / 320 * 640)
     assert cy == pytest.approx(((228 + 254) / 2) / 334 * 668)
+
+
+def _line(frame, recs):
+    out = f"<{frame}f>"
+    parts = []
+    for oid, (x1, y1, x2, y2) in recs:
+        parts.append(f"{oid}<|box;x1={x1};y1={y1};x2={x2};y2={y2};w=960;h=540|><|mask;x=0;y=0;data=4,4,!<9f>|>")
+    return out + ",".join(parts)
+
+
+def test_moving_filter_ignores_static_matches():
+    from app.meta import parse_tracks, pick_moving_track
+
+    lines = []
+    for f in range(20):
+        x = 100 + f * 30  # el carrito que se mueve
+        lines.append(_line(f, [(0, (500, 300, 560, 340)), (3, (x, 200, x + 40, 230))]))  # 0 = quieto y más grande
+    tracks = parse_tracks(lines)
+    assert set(tracks) == {0, 3}
+    assert all(len(p) == 20 for p in tracks.values())  # el "<9f>" dentro de la máscara no crea frames
+    oid, move = pick_moving_track(tracks)
+    assert oid == 3 and move > 0.4
+
+
+def test_moving_filter_rejects_all_static():
+    from app.meta import parse_tracks, pick_moving_track
+
+    lines = [_line(f, [(1, (100, 100, 140, 130))]) for f in range(10)]
+    oid, _ = pick_moving_track(parse_tracks(lines))
+    assert oid is None

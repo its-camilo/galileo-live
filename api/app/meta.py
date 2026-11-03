@@ -16,6 +16,65 @@ NUM = r"(-?\d+(?:\.\d+)?)"
 BOX_RE = re.compile(rf"<\|box;x1={NUM};y1={NUM};x2={NUM};y2={NUM};w={NUM};h={NUM}\|>")
 
 
+REC_RE = re.compile(rf"(\d+)<\|box;x1={NUM};y1={NUM};x2={NUM};y2={NUM};w={NUM};h={NUM}(?:;c={NUM})?\|>")
+LINE_FRAME_RE = re.compile(r"^\s*<(\d+)f>")
+
+
+def parse_tracks(lines: list[str]) -> dict[int, list[tuple[int, float, float, float]]]:
+    """Una línea por frame (un delta por frame). Devuelve {object_id: [(frame, cx/w, cy/h, área/w·h)]}.
+
+    Se lee cada delta por separado para que el payload base85 de una máscara nunca se
+    confunda con un marcador de frame.
+    """
+    tracks: dict[int, list[tuple[int, float, float, float]]] = {}
+    for line in lines:
+        fm = LINE_FRAME_RE.match(line)
+        if not fm:
+            continue
+        frame = int(fm.group(1))
+        for r in REC_RE.finditer(line, fm.end()):
+            oid = int(r.group(1))
+            x1, y1, x2, y2, w, h = (float(g) for g in r.groups()[1:7])
+            if w <= 0 or h <= 0:
+                continue
+            tracks.setdefault(oid, []).append(
+                (frame, (x1 + x2) / 2 / w, (y1 + y2) / 2 / h, (x2 - x1) * (y2 - y1) / (w * h))
+            )
+    for pts in tracks.values():
+        pts.sort(key=lambda p: p[0])
+    return tracks
+
+
+def _span(values: list[float]) -> float:
+    v = sorted(values)
+    lo = v[int(0.1 * (len(v) - 1))]
+    hi = v[int(round(0.9 * (len(v) - 1)))]
+    return hi - lo
+
+
+def pick_moving_track(
+    tracks: dict[int, list[tuple[int, float, float, float]]],
+    min_points: int = 5,
+    min_move: float = 0.04,
+) -> tuple[int | None, float]:
+    """Elige, entre los objetos que coinciden con el nombre, el que más se desplaza.
+
+    El desplazamiento es la diagonal del rango 10-90 % de su centroide (en fracción del
+    cuadro), robusta a saltos sueltos. Objetos quietos (< min_move) se descartan.
+    Devuelve (object_id o None, desplazamiento del mejor).
+    """
+    best, best_move = None, 0.0
+    for oid, pts in tracks.items():
+        if len(pts) < min_points:
+            continue
+        move = (_span([p[1] for p in pts]) ** 2 + _span([p[2] for p in pts]) ** 2) ** 0.5
+        if move > best_move:
+            best, best_move = oid, move
+    if best_move < min_move:
+        return None, best_move
+    return best, best_move
+
+
 class MetaNotConfigured(RuntimeError):
     pass
 
@@ -65,6 +124,24 @@ class MetaClient:
         r.raise_for_status()
         return r.json()
 
+    def english_object_name(self, name: str) -> str:
+        """Convierte el nombre que escribe el usuario (cualquier idioma) en una frase corta en inglés para SAM."""
+        out = self.chat(
+            [
+                {
+                    "role": "developer",
+                    "content": "Translate the user's object name into a short, concrete English noun phrase "
+                    "(1 to 4 words, keep colors and materials) that an object detector can find. "
+                    "Reply with the phrase only, lowercase, no punctuation.",
+                },
+                {"role": "user", "content": name},
+            ],
+            reasoning_effort="minimal",
+        )
+        text = out["choices"][0]["message"]["content"] or ""
+        text = re.sub(r"[^A-Za-z \-]", "", text).strip().lower()
+        return " ".join(text.split()[:4])
+
     def upload_file(self, path: Path) -> str:
         with path.open("rb") as fh:
             r = httpx.post(
@@ -88,7 +165,7 @@ class MetaClient:
         r.raise_for_status()
         return r.json()
 
-    def sam_track_video(self, file_id: str, concept: str) -> str:
+    def sam_track_video(self, file_id: str, concept: str) -> list[str]:
         body = {
             "model": SAM_MODEL,
             "stream": True,
@@ -102,6 +179,7 @@ class MetaClient:
                     ],
                 }
             ],
+            "metadata": {"mask_encoding": "one_bit"},
         }
         parts: list[str] = []
         with httpx.stream(
@@ -123,7 +201,7 @@ class MetaClient:
                     parts.append(event.get("delta", ""))
                 elif event.get("type") == "response.completed":
                     break
-        return "".join(parts)
+        return parts
 
     def delete_file(self, file_id: str) -> None:
         r = httpx.delete(f"{self._base}/files/{file_id}", headers=self._auth, timeout=60)

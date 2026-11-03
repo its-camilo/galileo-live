@@ -62,7 +62,8 @@ export async function apiBlob(path: string): Promise<Blob> {
   return res.blob();
 }
 
-export function errorKey(e: unknown): "consent" | "limit" | "busy" | "needCalib" | "noDetect" | "long" | "tooLarge" | "noResults" | "generic" {
+export function errorKey(e: unknown): "consent" | "limit" | "busy" | "needCalib" | "noDetect" | "long" | "tooLarge" | "noResults" | "noMove" | "segDown" | "objectName" | "network" | "generic" {
+  if (e instanceof TypeError) return "network";
   if (!(e instanceof ApiError)) return "generic";
   if (e.status === 403) return "consent";
   if (e.status === 429) return "limit";
@@ -73,5 +74,8 @@ export function errorKey(e: unknown): "consent" | "limit" | "busy" | "needCalib"
   if (m.includes("not enough detections")) return "noDetect";
   if (m.includes("longer than 10")) return "long";
   if (m.includes("no results")) return "noResults";
+  if (m.includes("did not move")) return "noMove";
+  if (m.includes("letters only")) return "objectName";
+  if (e.status === 502 || e.status === 504 || m.includes("segmentation unavailable")) return "segDown";
   return "generic";
 }

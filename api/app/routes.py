@@ -17,7 +17,7 @@ from .db import NOW_TEXT, connect
 import shutil
 
 from . import media
-from .meta import MetaClient, MetaNotConfigured, parse_frames, track_centroids
+from .meta import MetaClient, MetaNotConfigured, parse_frames, parse_tracks, pick_moving_track, track_centroids
 from .security import acquire_heavy, rate_limit, release_heavy, spend
 
 log = logging.getLogger("galileo.routes")
@@ -612,15 +612,37 @@ MOVE_M_TRIM = 0.03
 
 class ObjectIn(BaseModel):
     session_id: str = Field(max_length=64)
-    object_prompt: str = Field(min_length=2, max_length=60, pattern=r"^[A-Za-z][A-Za-z \-]{1,59}$")
+    object_prompt: str = Field(min_length=2, max_length=60)
+
+
+OBJECT_NAME_RE = re.compile(r"^[^\W\d_][^\W\d_ \-]{1,59}$")
 
 
 @router.post("/session/object", dependencies=[Depends(rate_limit("sessions"))])
 def set_object(body: ObjectIn, user: dict = Depends(require_consent)):
+    """Filtro 1: el nombre que el usuario le pone al objeto (en cualquier idioma) es lo que SAM busca."""
+    name = " ".join(body.object_prompt.split())
+    if not OBJECT_NAME_RE.match(name):
+        raise HTTPException(422, "object name must be letters only")
+    prompt = name.lower()
+    if not name.isascii() or (prompt and any(w in prompt.split() for w in SPANISH_HINTS)):
+        try:
+            prompt = _meta().english_object_name(name) or prompt
+        except (MetaNotConfigured, httpx.HTTPError, KeyError, IndexError):
+            pass
+    if not re.match(r"^[a-z][a-z \-]{1,59}$", prompt):
+        raise HTTPException(422, "object name must be letters only")
     with connect() as conn:
         sess = _session(conn, body.session_id, user["sub"])
-        conn.execute("UPDATE sessions SET object_prompt = ? WHERE id = ?", (body.object_prompt.strip(), sess["id"]))
-    return {"object_prompt": body.object_prompt.strip()}
+        conn.execute("UPDATE sessions SET object_prompt = ? WHERE id = ?", (prompt, sess["id"]))
+    return {"object_prompt": prompt}
+
+
+SPANISH_HINTS = {
+    "carro", "carrito", "pelota", "bola", "balon", "canica", "juguete", "rojo", "roja", "azul", "verde",
+    "amarillo", "amarilla", "negro", "negra", "blanco", "blanca", "de", "del", "la", "el", "pequeno",
+    "caja", "botella", "moneda", "dado", "cubo", "tapa", "lata", "vaso", "llavero", "borrador", "lapiz",
+}
 
 
 @router.post("/measure", dependencies=[Depends(rate_limit("measure"))])
@@ -653,9 +675,22 @@ async def measure_clip(
         if info.duration > MAX_CLIP_SECONDS:
             raise HTTPException(422, "clip longer than 10 seconds")
         client = _meta()
-        file_id = client.upload_file(clip)
-        frames = parse_frames(client.sam_track_video(file_id, run.object_prompt(sess)))
-        track = track_centroids(frames, out_w=FRAME_WIDTH, out_h=info.height * FRAME_WIDTH / info.width)
+        try:
+            file_id = client.upload_file(clip)
+            lines = client.sam_track_video(file_id, run.object_prompt(sess))
+        except httpx.HTTPError as exc:
+            log.exception("SAM video tracking failed")
+            raise HTTPException(502, "segmentation unavailable") from exc
+        # Filtro 2: de todos los objetos con ese nombre, solo el que se mueve.
+        tracks = parse_tracks(lines)
+        oid, moved = pick_moving_track(tracks)
+        log.info("measure: %d objects matched, moving id=%s span=%.3f", len(tracks), oid, moved)
+        if not tracks:
+            raise HTTPException(422, "not enough detections of the object in the clip")
+        if oid is None:
+            raise HTTPException(422, "the object did not move enough in the clip")
+        out_h = info.height * FRAME_WIDTH / info.width
+        track = [(f, cx * FRAME_WIDTH, cy * out_h) for f, cx, cy, _ in tracks[oid]]
     finally:
         if client is not None and file_id is not None:
             try:

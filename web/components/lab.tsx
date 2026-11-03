@@ -198,7 +198,7 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
   async function saveObject() {
     const value = objectText.trim();
     if (!value || value === (session?.object_prompt ?? "")) return;
-    if (!/^[A-Za-z][A-Za-z \-]{1,59}$/.test(value)) {
+    if (!/^\p{L}[\p{L} \-]{1,59}$/u.test(value)) {
       setError(T.objectHint);
       return;
     }
@@ -241,10 +241,12 @@ export function Lab({ sessionId, lang }: { sessionId: string; lang: Lang }) {
     }
   }
 
-  function startRecording() {
+  async function startRecording() {
     const stream = streamRef.current;
     if (!stream || recording) return;
     setError(null);
+    // Filtro 1: el nombre escrito se guarda antes de grabar (en iOS el blur puede no alcanzar a terminar).
+    if (objectText.trim() && objectText.trim() !== (session?.object_prompt ?? "")) await saveObject();
     const mime = pickMime();
     const opts: MediaRecorderOptions = { videoBitsPerSecond: 8_000_000 };
     if (mime) opts.mimeType = mime;
