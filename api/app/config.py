@@ -50,5 +50,5 @@ def get_settings() -> Settings:
         blob_token=os.environ.get("BLOB_READ_WRITE_TOKEN") or None,
         database_url=os.environ.get("DATABASE_URL") or None,
         allowed_origins=_csv("ALLOWED_ORIGINS", "https://galileo-live.vercel.app,http://localhost:3000"),
-        allowed_hosts=_csv("ALLOWED_HOSTS", "vps-oracle-01.tailfb0395.ts.net,127.0.0.1,localhost"),
+        allowed_hosts=_csv("ALLOWED_HOSTS", "galileo-live-api.onrender.com,127.0.0.1,localhost,testserver"),
     )

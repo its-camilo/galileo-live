@@ -122,7 +122,7 @@ def test_run_frame_endpoint_with_fake_sam(db, monkeypatch):
     tok = jwt.encode({"sub": "u", "aud": "galileo-vps", "iss": "galileo-web", "iat": now, "exp": now + 300},
                      "k" * 40, algorithm="HS256")
     h = {"Authorization": f"Bearer {tok}"}
-    with TestClient(app, base_url="http://vps-oracle-01.tailfb0395.ts.net") as client:
+    with TestClient(app, base_url="http://localhost") as client:
         assert client.post("/run/start", json={"session_id": "s"}, headers=h).status_code == 200
         r = client.post("/run/frame", json={"session_id": "s", "t": 0.0, "height": 480, "frame": "AAAA"}, headers=h)
         assert r.status_code == 200
@@ -258,7 +258,7 @@ def test_measure_endpoint_end_to_end_with_fake_meta(db, monkeypatch, tmp_path):
     now = int(time.time())
     tok = jwt.encode({"sub": "u", "aud": "galileo-vps", "iss": "galileo-web", "iat": now, "exp": now + 300},
                      "k" * 40, algorithm="HS256")
-    with TestClient(app, base_url="http://vps-oracle-01.tailfb0395.ts.net") as client:
+    with TestClient(app, base_url="http://localhost") as client:
         with open(video, "rb") as fh:
             r = client.post("/measure", data={"session_id": "s"},
                             files={"video": ("clip.mp4", fh, "video/mp4")},

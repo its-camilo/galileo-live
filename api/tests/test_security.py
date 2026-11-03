@@ -19,7 +19,7 @@ def client(tmp_path, monkeypatch):
     from app import security
     monkeypatch.setattr(security, "_window", security.SlidingWindow())
     from app.main import app
-    with TestClient(app, base_url="http://vps-oracle-01.tailfb0395.ts.net") as c:
+    with TestClient(app, base_url="http://localhost") as c:
         yield c
     config.get_settings.cache_clear()
 
